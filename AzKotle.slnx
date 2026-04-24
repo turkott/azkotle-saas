@@ -1,6 +1,17 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/AzKotle.Core/AzKotle.Core.csproj" />
+    <Project Path="src/AzKotle.Api/AzKotle.Api.csproj" />
+    <Project Path="src/AzKotle.Application/AzKotle.Application.csproj" />
+    <Project Path="src/AzKotle.Domain/AzKotle.Domain.csproj" />
+    <Project Path="src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj" />
+    <Project Path="src/AzKotle.Shared/AzKotle.Shared.csproj" />
+    <Project Path="src/AzKotle.Web.Client/AzKotle.Web.Client.csproj" />
     <Project Path="src/AzKotle.Web/AzKotle.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AzKotle.Api.IntegrationTests/AzKotle.Api.IntegrationTests.csproj" />
+    <Project Path="tests/AzKotle.Application.Tests/AzKotle.Application.Tests.csproj" />
+    <Project Path="tests/AzKotle.Domain.Tests/AzKotle.Domain.Tests.csproj" />
+    <Project Path="tests/AzKotle.Web.E2ETests/AzKotle.Web.E2ETests.csproj" />
   </Folder>
 </Solution>
