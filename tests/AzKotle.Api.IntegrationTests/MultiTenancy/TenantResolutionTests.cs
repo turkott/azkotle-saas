@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AzKotle.Domain.Entities.Users;
 using FluentAssertions;
 
 namespace AzKotle.Api.IntegrationTests.MultiTenancy;
@@ -40,9 +42,8 @@ public sealed class TenantResolutionTests : IClassFixture<AzKotleApiFactory>
     public async Task WhoAmI_With_Jwt_Claim_Returns_Tenant()
     {
         using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            AzKotleApiFactory.TestTenantClaimHeader,
-            _factory.TenantAId.Value.ToString());
+        var token = _factory.IssueJwt(_factory.TenantAId, _factory.UserAId, "a@example.com", UserRole.Owner);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var response = await client.GetAsync("/whoami");
 
@@ -93,14 +94,10 @@ public sealed class TenantResolutionTests : IClassFixture<AzKotleApiFactory>
     public async Task Jwt_Claim_Takes_Precedence_Over_Subdomain()
     {
         using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            AzKotleApiFactory.TestTenantClaimHeader,
-            _factory.TenantAId.Value.ToString());
+        var token = _factory.IssueJwt(_factory.TenantAId, _factory.UserAId, "a@example.com", UserRole.Owner);
         var request = new HttpRequestMessage(HttpMethod.Get, "/whoami");
         request.Headers.Host = $"{_factory.TenantBSlug}.az-kotle.cz";
-        request.Headers.Add(
-            AzKotleApiFactory.TestTenantClaimHeader,
-            _factory.TenantAId.Value.ToString());
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var response = await client.SendAsync(request);
 

@@ -1,5 +1,12 @@
+using System.Text;
+using AzKotle.Api.Endpoints;
 using AzKotle.Api.MultiTenancy;
+using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
+using AzKotle.Infrastructure.Auth;
+using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,8 +15,35 @@ builder.Services.AddOpenApi();
 var connectionString = builder.Configuration.GetConnectionString("AzKotleDb")
     ?? "Host=localhost;Port=5432;Database=azkotle;Username=postgres;Password=postgres";
 
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddAzKotleDb(connectionString);
 builder.Services.AddAzKotleHttpTenancy();
+
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
+builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
+builder.Services.AddValidatorsFromAssemblyContaining<AzKotle.Application.Auth.Validators.RegisterRequestValidator>();
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Secret)),
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -20,15 +54,21 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseTenantResolution();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health")
-    .WithMetadata(new AllowAnonymousTenantAttribute());
+    .WithMetadata(new AllowAnonymousTenantAttribute())
+    .AllowAnonymous();
 
-app.MapGet("/whoami", (AzKotle.Application.Abstractions.ITenantContext tenantContext) =>
+app.MapGet("/whoami", (ITenantContext tenantContext) =>
         Results.Ok(new { tenantId = tenantContext.Current?.Value }))
-    .WithName("WhoAmI");
+    .WithName("WhoAmI")
+    .AllowAnonymous();
+
+app.MapAuthEndpoints();
 
 app.Run();
 

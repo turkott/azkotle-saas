@@ -18,6 +18,7 @@ public sealed partial class User : DomainEntity
     public bool IsActive { get; private set; }
     public DateTime? LastLoginAt { get; private set; }
     public DateTime CreatedAt { get; private set; }
+    public string? PasswordHash { get; private set; }
 
     private User()
     {
@@ -73,6 +74,29 @@ public sealed partial class User : DomainEntity
         };
         user.RaiseDomainEvent(new UserInvited(user.Id, tenantId, normalizedEmail, role, now));
         return user;
+    }
+
+    public static User RegisterOwner(
+        TenantId tenantId,
+        string email,
+        string fullName,
+        string passwordHash,
+        TimeProvider? timeProvider = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
+
+        var user = Invite(tenantId, email, fullName, UserRole.Owner, timeProvider);
+        user.PasswordHash = passwordHash;
+        user.IsActive = true;
+        user.RaiseDomainEvent(new UserActivated(user.Id, user.TenantId,
+            (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime));
+        return user;
+    }
+
+    public void SetPassword(string passwordHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
+        PasswordHash = passwordHash;
     }
 
     public void Activate(TimeProvider? timeProvider = null)

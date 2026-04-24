@@ -1,12 +1,10 @@
-using System.Security.Claims;
+using AzKotle.Application.Abstractions;
 using AzKotle.Domain.Common;
 using AzKotle.Domain.Entities.Tenants;
+using AzKotle.Domain.Entities.Users;
 using AzKotle.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
@@ -15,7 +13,8 @@ namespace AzKotle.Api.IntegrationTests.MultiTenancy;
 
 public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    internal const string TestTenantClaimHeader = "X-Test-Tenant-Claim";
+    internal const string TestJwtSecret =
+        "test-secret-DO-NOT-USE-IN-PRODUCTION-at-least-32-chars-long-filler-xyz";
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
         .WithImage("postgres:16-alpine")
@@ -27,6 +26,10 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
     public TenantId TenantAId { get; private set; }
 
     public TenantId TenantBId { get; private set; }
+
+    public UserId UserAId { get; private set; }
+
+    public UserId UserBId { get; private set; }
 
     public string TenantASlug => "acme";
 
@@ -44,43 +47,31 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
         db.Tenants.AddRange(tenantA, tenantB);
         await db.SaveChangesAsync();
 
+        var userA = User.Invite(tenantA.Id, "a@example.com", "User A", UserRole.Owner);
+        var userB = User.Invite(tenantB.Id, "b@example.com", "User B", UserRole.Owner);
+        db.Users.AddRange(userA, userB);
+        await db.SaveChangesAsync();
+
         TenantAId = tenantA.Id;
         TenantBId = tenantB.Id;
+        UserAId = userA.Id;
+        UserBId = userB.Id;
     }
 
     public new Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
 
+    public string IssueJwt(TenantId tenantId, UserId userId, string email, UserRole role)
+    {
+        using var scope = Services.CreateScope();
+        var jwt = scope.ServiceProvider.GetRequiredService<IJwtTokenService>();
+        return jwt.IssueAccessToken(userId, tenantId, email, role).Token;
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:AzKotleDb", _postgres.GetConnectionString());
-        builder.ConfigureTestServices(services =>
-        {
-            services.AddSingleton<IStartupFilter, TestHeaderAuthStartupFilter>();
-        });
-    }
-
-    private sealed class TestHeaderAuthStartupFilter : IStartupFilter
-    {
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
-        {
-            return app =>
-            {
-                app.Use(async (ctx, nextMiddleware) =>
-                {
-                    if (ctx.Request.Headers.TryGetValue(TestTenantClaimHeader, out var claimValue)
-                        && !string.IsNullOrWhiteSpace(claimValue))
-                    {
-                        var identity = new ClaimsIdentity(
-                            new[] { new Claim("tenant_id", claimValue!) },
-                            authenticationType: "Test");
-                        ctx.User = new ClaimsPrincipal(identity);
-                    }
-
-                    await nextMiddleware();
-                });
-
-                next(app);
-            };
-        }
+        builder.UseSetting("Jwt:Secret", TestJwtSecret);
+        builder.UseSetting("Jwt:Issuer", "azkotle-test");
+        builder.UseSetting("Jwt:Audience", "azkotle-api-test");
     }
 }

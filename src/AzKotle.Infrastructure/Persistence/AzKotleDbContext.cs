@@ -1,3 +1,4 @@
+using AzKotle.Domain.Entities.Auth;
 using AzKotle.Domain.Entities.Tenants;
 using AzKotle.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,8 @@ public sealed class AzKotleDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
     public DbSet<User> Users => Set<User>();
+
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

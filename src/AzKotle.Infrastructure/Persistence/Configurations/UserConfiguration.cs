@@ -64,6 +64,10 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasColumnType("timestamptz")
             .IsRequired();
 
+        builder.Property(u => u.PasswordHash)
+            .HasColumnName("password_hash")
+            .HasMaxLength(256);
+
         builder.HasOne<AzKotle.Domain.Entities.Tenants.Tenant>()
             .WithMany()
             .HasForeignKey(u => u.TenantId)

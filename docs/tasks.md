@@ -84,14 +84,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 
 ### TASK 1.4 — Auth endpoints (register, login, refresh)
 
-- [ ] `POST /api/v1/auth/register` — vytvoří tenant + owner usera.
-- [ ] `POST /api/v1/auth/login` → `{ accessToken, refreshToken, expiresIn }`.
-- [ ] `POST /api/v1/auth/refresh` — rotace refresh tokenu.
-- [ ] `POST /api/v1/auth/logout`.
-- [ ] Argon2id hashing (`Konscious.Security.Cryptography.Argon2`).
-- [ ] JWT HS256, issuer/audience z konfigu, 15min TTL.
-- [ ] FluentValidation.
-- [ ] Integrační testy: happy path + 4 edge cases.
+- [x] `POST /api/v1/auth/register` — vytvoří tenant + owner usera (AllowAnonymousTenant).
+- [x] `POST /api/v1/auth/login` → `{ accessToken, refreshToken, expiresIn }` (vyžaduje tenant subdoménu).
+- [x] `POST /api/v1/auth/refresh` — rotace refresh tokenu + reuse-detection (revoke chain).
+- [x] `POST /api/v1/auth/logout` — revoke refresh token (`RequireAuthorization`).
+- [x] Argon2id hashing (`Konscious.Security.Cryptography.Argon2`; Iterations=4, Memory=64MB, Parallelism=4, SaltSize=16, HashSize=32; formát `$argon2id$v=19$m=...$salt$hash`).
+- [x] JWT HS256, issuer/audience z konfigu, 15 min access / 30 dní refresh.
+- [x] FluentValidation (české hlášky).
+- [x] Integrační testy: happy path + 7 edge cases (dup email/slug 409, wrong password 401, revoked/reuse refresh, no/invalid bearer 401).
 
 ### TASK 1.5 — Blazor United shell + login page
 
