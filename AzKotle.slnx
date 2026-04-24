@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AzKotle.Core/AzKotle.Core.csproj" />
+    <Project Path="src/AzKotle.Web/AzKotle.Web.csproj" />
+  </Folder>
+</Solution>
