@@ -1,4 +1,4 @@
-﻿namespace AzKotle.Application.Tests;
+namespace AzKotle.Application.Tests;
 
 public class UnitTest1
 {

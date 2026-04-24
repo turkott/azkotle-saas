@@ -1,4 +1,4 @@
-﻿namespace AzKotle.Web.E2ETests;
+namespace AzKotle.Web.E2ETests;
 
 public class UnitTest1
 {

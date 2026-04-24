@@ -1,4 +1,4 @@
-﻿namespace AzKotle.Domain.Tests;
+namespace AzKotle.Domain.Tests;
 
 public class UnitTest1
 {

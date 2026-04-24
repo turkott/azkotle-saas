@@ -1,4 +1,4 @@
-﻿namespace AzKotle.Api.IntegrationTests;
+namespace AzKotle.Api.IntegrationTests;
 
 public class UnitTest1
 {
