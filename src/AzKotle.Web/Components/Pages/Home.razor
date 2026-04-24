@@ -1,7 +1,20 @@
-﻿@page "/"
+@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>AZ KOTLE</PageTitle>
 
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudStack Spacing="4" AlignItems="AlignItems.Center">
+        <MudText Typo="Typo.h2" Align="Align.Center">AZ KOTLE</MudText>
+        <MudText Typo="Typo.h6" Align="Align.Center" Color="Color.Secondary">
+            Cloudová evidence plynových kotlů + revizní zprávy dle NV 191/2022 Sb.
+        </MudText>
+        <MudStack Row Spacing="2" Class="mt-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Href="/register">
+                Začít zdarma (14 dní)
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Large" Href="/login">
+                Přihlásit se
+            </MudButton>
+        </MudStack>
+    </MudStack>
+</MudContainer>

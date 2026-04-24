@@ -61,6 +61,10 @@
   <ItemGroup Label="Blazor + API template defaults">
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
+    <PackageVersion Include="MudBlazor" Version="9.4.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.7" />
   </ItemGroup>
 </Project>

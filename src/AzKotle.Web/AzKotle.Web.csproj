@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AzKotle.Web.Client\AzKotle.Web.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+    <PackageReference Include="MudBlazor" />
   </ItemGroup>
 
   <ItemGroup>

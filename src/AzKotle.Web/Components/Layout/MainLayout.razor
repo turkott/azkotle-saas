@@ -1,23 +1,31 @@
-﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
+<MudLayout>
+    <MudAppBar Elevation="1" Dense>
+        <MudText Typo="Typo.h6" Class="mr-4" Style="font-weight: 700;">AZ KOTLE</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body2" Class="mr-3" Style="color: white;">@context.User.Identity?.Name</MudText>
+                <MudButton Variant="Variant.Outlined" Color="Color.Inherit" Href="/dashboard">Nástěnka</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" Href="/logout" Class="ml-2">Odhlásit</MudButton>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" Href="/login">Přihlásit</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Inherit" Href="/register" Class="ml-2">Registrace</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+    <MudMainContent Class="pa-4">
+        <MudContainer MaxWidth="MaxWidth.Large" Class="mt-2">
             @Body
-        </article>
-    </main>
-</div>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Došlo k neočekávané chybě.
+    <a href="." class="reload">Načíst znovu</a>
     <span class="dismiss">🗙</span>
 </div>

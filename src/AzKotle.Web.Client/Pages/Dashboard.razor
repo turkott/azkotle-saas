@@ -1,0 +1,42 @@
+@page "/dashboard"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
+
+<PageTitle>Nástěnka · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        <MudText Typo="Typo.h3" Class="mb-2">Nástěnka</MudText>
+        <MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+            Vítej, @(context.User.FindFirst("email")?.Value ?? context.User.Identity?.Name ?? "uživateli").
+        </MudText>
+
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudCard>
+                    <MudCardContent>
+                        <MudText Typo="Typo.h6">Tenant</MudText>
+                        <MudText Typo="Typo.body2">@(context.User.FindFirst("tenant_id")?.Value ?? "—")</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudCard>
+                    <MudCardContent>
+                        <MudText Typo="Typo.h6">Role</MudText>
+                        <MudText Typo="Typo.body2">@(context.User.FindFirst("role")?.Value ?? "—")</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Class="mt-6">
+            Toto je placeholder nástěnky. Moduly (kotle, revize, QR, zákazníci) přijdou v Fázi 2–3.
+        </MudAlert>
+    </Authorized>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení nástěnky se přihlas.</MudAlert>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" Href="/login">Přihlásit</MudButton>
+    </NotAuthorized>
+</AuthorizeView>

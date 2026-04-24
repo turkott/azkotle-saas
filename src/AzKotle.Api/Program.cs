@@ -4,6 +4,7 @@ using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
+using AzKotle.Infrastructure.External;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -22,6 +23,13 @@ builder.Services.AddAzKotleHttpTenancy();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
+builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
+{
+    client.BaseAddress = new Uri("https://ares.gov.cz/");
+    client.Timeout = TimeSpan.FromSeconds(5);
+    client.DefaultRequestHeaders.Add("User-Agent", "AzKotle-SaaS/1.0");
+});
 
 builder.Services.AddValidatorsFromAssemblyContaining<AzKotle.Application.Auth.Validators.RegisterRequestValidator>();
 
@@ -45,6 +53,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+const string CorsPolicy = "AzKotleCors";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicy, policy =>
+    {
+        var configured = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? new[] { "http://localhost:5100", "https://localhost:5101" };
+
+        policy.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrWhiteSpace(origin))
+                    return false;
+                if (configured.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                    return true;
+                try
+                {
+                    var host = new Uri(origin).Host;
+                    return host.EndsWith(".az-kotle.cz", StringComparison.OrdinalIgnoreCase)
+                        || host.Equals("az-kotle.cz", StringComparison.OrdinalIgnoreCase)
+                        || host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+                }
+                catch (UriFormatException)
+                {
+                    return false;
+                }
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -53,6 +93,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -69,6 +111,7 @@ app.MapGet("/whoami", (ITenantContext tenantContext) =>
     .AllowAnonymous();
 
 app.MapAuthEndpoints();
+app.MapLookupEndpoints();
 
 app.Run();
 

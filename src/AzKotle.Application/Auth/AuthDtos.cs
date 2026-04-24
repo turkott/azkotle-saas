@@ -8,9 +8,9 @@ public sealed record RegisterRequest(
     string CompanyName,
     string? Ico);
 
-public sealed record LoginRequest(string Email, string Password);
+public sealed record LoginRequest(string Email, string Password, string? TenantSlug = null);
 
-public sealed record RefreshRequest(string RefreshToken);
+public sealed record RefreshRequest(string RefreshToken, string? TenantSlug = null);
 
 public sealed record LogoutRequest(string RefreshToken);
 

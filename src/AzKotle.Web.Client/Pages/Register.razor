@@ -1,0 +1,188 @@
+@page "/register"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Auth
+@using AzKotle.Web.Client.Auth
+@using Microsoft.AspNetCore.Components.Forms
+@inject AuthApiClient AuthClient
+@inject LookupApiClient LookupClient
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Registrace · AZ KOTLE</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudPaper Elevation="2" Class="pa-6">
+        <MudText Typo="Typo.h4" Class="mb-2" Align="Align.Center">Registrace firmy</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4" Align="Align.Center" Color="Color.Secondary">
+            Vytvoříme ti tenant + owner účet.
+        </MudText>
+
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync">
+            <DataAnnotationsValidator />
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_model.CompanyName"
+                              Label="Název firmy"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.TenantSlug"
+                              Label="Identifikátor (slug)"
+                              HelperText="Malá písmena, čísla, pomlčka. Např. acme-servis."
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudStack Row Spacing="2" AlignItems="AlignItems.Start">
+                    <MudTextField @bind-Value="_model.Ico"
+                                  Label="IČO (volitelné)"
+                                  MaxLength="8"
+                                  Disabled="_busy"
+                                  Variant="Variant.Outlined"
+                                  Class="flex-grow-1" />
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               OnClick="LookupAresAsync"
+                               Disabled="@(_busy || _aresBusy || string.IsNullOrWhiteSpace(_model.Ico))"
+                               Style="height: 56px; min-width: 140px;">
+                        @if (_aresBusy)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate />
+                        }
+                        else
+                        {
+                            <span>Načíst z ARES</span>
+                        }
+                    </MudButton>
+                </MudStack>
+
+                <MudDivider Class="my-2" />
+
+                <MudTextField @bind-Value="_model.FullName"
+                              Label="Jméno a příjmení"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Email"
+                              Label="Email"
+                              InputType="InputType.Email"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Password"
+                              Label="Heslo (min. 12 znaků)"
+                              InputType="InputType.Password"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                @if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense>@_error</MudAlert>
+                }
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           FullWidth
+                           Disabled="_busy">
+                    @if (_busy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate />
+                    }
+                    else
+                    {
+                        <span>Vytvořit účet</span>
+                    }
+                </MudButton>
+
+                <MudText Typo="Typo.body2" Align="Align.Center">
+                    Už máš účet? <MudLink Href="/login">Přihlásit</MudLink>
+                </MudText>
+            </MudStack>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private readonly RegisterModel _model = new();
+    private bool _busy;
+    private bool _aresBusy;
+    private string? _error;
+
+    private async Task LookupAresAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Ico))
+        {
+            return;
+        }
+
+        _aresBusy = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupClient.LookupAresAsync(_model.Ico.Trim());
+            if (result.Succeeded && result.Value is not null)
+            {
+                _model.CompanyName = result.Value.CompanyName;
+                Snackbar.Add($"Načteno z ARES: {result.Value.CompanyName}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "ARES vyhledávání selhalo.",
+                    result.IsNotFound ? Severity.Warning : Severity.Error);
+            }
+        }
+        finally
+        {
+            _aresBusy = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new RegisterRequest(
+                Email: _model.Email.Trim(),
+                Password: _model.Password,
+                FullName: _model.FullName.Trim(),
+                TenantSlug: _model.TenantSlug.Trim(),
+                CompanyName: _model.CompanyName.Trim(),
+                Ico: string.IsNullOrWhiteSpace(_model.Ico) ? null : _model.Ico.Trim());
+
+            var result = await AuthClient.RegisterAsync(request);
+            if (!result.Succeeded)
+            {
+                _error = result.Error ?? "Registrace se nezdařila.";
+                return;
+            }
+
+            Snackbar.Add("Registrace proběhla v pořádku.", Severity.Success);
+            Navigation.NavigateTo("/dashboard");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class RegisterModel
+    {
+        public string CompanyName { get; set; } = string.Empty;
+        public string TenantSlug { get; set; } = string.Empty;
+        public string? Ico { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

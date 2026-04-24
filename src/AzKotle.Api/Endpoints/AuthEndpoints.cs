@@ -32,10 +32,12 @@ public static class AuthEndpoints
 
         group.MapPost("/login", LoginAsync)
             .WithName("AuthLogin")
+            .WithMetadata(new AllowAnonymousTenantAttribute())
             .AllowAnonymous();
 
         group.MapPost("/refresh", RefreshAsync)
             .WithName("AuthRefresh")
+            .WithMetadata(new AllowAnonymousTenantAttribute())
             .AllowAnonymous();
 
         group.MapPost("/logout", LogoutAsync)
@@ -112,11 +114,16 @@ public static class AuthEndpoints
             return Results.ValidationProblem(validation.ToDictionary());
         }
 
-        var tenantId = tenantContext.Current;
+        var tenantId = await ResolveTenantAsync(db, tenantContext, request.TenantSlug, ct);
         if (tenantId is null)
         {
             return InvalidCredentials();
         }
+
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT set_config('app.current_tenant_id', {0}, false)",
+            new object[] { tenantId.Value.Value.ToString() },
+            ct);
 
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var user = await db.Users
@@ -125,6 +132,7 @@ public static class AuthEndpoints
         if (user is null
             || !user.IsActive
             || string.IsNullOrEmpty(user.PasswordHash)
+            || user.TenantId != tenantId.Value
             || !hasher.Verify(request.Password, user.PasswordHash))
         {
             return InvalidCredentials();
@@ -150,10 +158,16 @@ public static class AuthEndpoints
             return Results.ValidationProblem(validation.ToDictionary());
         }
 
-        if (tenantContext.Current is null)
+        var tenantId = await ResolveTenantAsync(db, tenantContext, request.TenantSlug, ct);
+        if (tenantId is null)
         {
             return InvalidRefresh();
         }
+
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT set_config('app.current_tenant_id', {0}, false)",
+            new object[] { tenantId.Value.Value.ToString() },
+            ct);
 
         var hash = jwt.HashRefreshToken(request.RefreshToken);
         var existing = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
@@ -265,6 +279,31 @@ public static class AuthEndpoints
             }
             current = next;
         }
+    }
+
+    private static async Task<TenantId?> ResolveTenantAsync(
+        AzKotleDbContext db,
+        ITenantContext tenantContext,
+        string? slugFallback,
+        CancellationToken ct)
+    {
+        if (tenantContext.Current is { } current)
+        {
+            return current;
+        }
+
+        if (string.IsNullOrWhiteSpace(slugFallback))
+        {
+            return null;
+        }
+
+        var guid = await db.Tenants
+            .AsNoTracking()
+            .Where(t => t.Slug == slugFallback)
+            .Select(t => (Guid?)t.Id.Value)
+            .FirstOrDefaultAsync(ct);
+
+        return guid.HasValue ? new TenantId(guid.Value) : null;
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex) =>

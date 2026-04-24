@@ -1,0 +1,107 @@
+@page "/login"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Auth
+@using AzKotle.Web.Client.Auth
+@using Microsoft.AspNetCore.Components.Forms
+@inject AuthApiClient AuthClient
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Přihlášení · AZ KOTLE</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudPaper Elevation="2" Class="pa-6">
+        <MudText Typo="Typo.h4" Class="mb-4" Align="Align.Center">Přihlášení</MudText>
+
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync">
+            <DataAnnotationsValidator />
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_model.Email"
+                              Label="Email"
+                              InputType="InputType.Email"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Password"
+                              Label="Heslo"
+                              InputType="InputType.Password"
+                              Required
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.TenantSlug"
+                              Label="Slug firmy (dev fallback)"
+                              HelperText="Vyplň, pokud nejsi na {slug}.az-kotle.cz"
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
+
+                @if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense>@_error</MudAlert>
+                }
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           FullWidth
+                           Disabled="_busy">
+                    @if (_busy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate />
+                    }
+                    else
+                    {
+                        <span>Přihlásit</span>
+                    }
+                </MudButton>
+
+                <MudText Typo="Typo.body2" Align="Align.Center">
+                    Nemáš účet? <MudLink Href="/register">Registrovat firmu</MudLink>
+                </MudText>
+            </MudStack>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private readonly LoginModel _model = new();
+    private bool _busy;
+    private string? _error;
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new LoginRequest(
+                _model.Email.Trim(),
+                _model.Password,
+                string.IsNullOrWhiteSpace(_model.TenantSlug) ? null : _model.TenantSlug.Trim());
+            var result = await AuthClient.LoginAsync(request);
+            if (!result.Succeeded)
+            {
+                _error = result.Error ?? "Přihlášení se nezdařilo.";
+                return;
+            }
+
+            Snackbar.Add("Přihlášení proběhlo v pořádku.", Severity.Success);
+            Navigation.NavigateTo("/dashboard");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class LoginModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string? TenantSlug { get; set; }
+    }
+}

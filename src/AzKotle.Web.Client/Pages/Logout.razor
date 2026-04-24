@@ -1,0 +1,22 @@
+@page "/logout"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Web.Client.Auth
+@inject AuthApiClient AuthClient
+@inject NavigationManager Navigation
+
+<PageTitle>Odhlášení · AZ KOTLE</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudPaper Elevation="2" Class="pa-6 text-center">
+        <MudProgressCircular Indeterminate />
+        <MudText Typo="Typo.body1" Class="mt-3">Odhlašuji…</MudText>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await AuthClient.LogoutAsync();
+        Navigation.NavigateTo("/login", forceLoad: false);
+    }
+}

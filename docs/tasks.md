@@ -95,13 +95,16 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 
 ### TASK 1.5 — Blazor United shell + login page
 
-- [ ] Blazor United template (interactive server + WASM auto).
-- [ ] Layout: `MainLayout.razor` s navbar + sidebar.
-- [ ] Stránky: `/login`, `/register`, `/dashboard` (placeholder).
-- [ ] `AuthenticationStateProvider` napojený na JWT.
-- [ ] Design system: **zeptat se — Tailwind nebo MudBlazor**.
-- [ ] Brand barvy: primary `#0F6B8A`, accent `#D97706`, text `#0F1A24`.
-- [ ] Responsive, funguje na 360px.
+- [x] Blazor United template (interactive server + WASM).
+- [x] Layout: `MainLayout.razor` s `MudAppBar` (navbar). Sidebar odložen do fáze 2 (chybí menu položky).
+- [x] Stránky: `/login`, `/register`, `/dashboard` (placeholder), `/logout`, `/` (landing).
+- [x] `JwtAuthenticationStateProvider` napojený na JWT z localStorage (`BrowserStorage`/`AuthSession`).
+- [x] **Design system: MudBlazor** (volba uživatele — žádný npm, rychlejší iterace, `MudDataGrid` pro TASK 2.4).
+- [x] Brand barvy v `AzKotleTheme`: primary `#0F6B8A`, accent `#D97706`, text `#0F1A24`.
+- [x] Responsive — `MudGrid`/`MudContainer MaxWidth="Small"`, form funguje na 360px.
+- [x] Api: CORS policy + `TenantSlug` fallback v `LoginRequest`/`RefreshRequest` (dev bez subdomény).
+- [x] **Bonus** — ARES integrace (`GET /api/v1/lookup/ares/{ico}` + tlačítko „Načíst z ARES" v Register formu; autofill `CompanyName`). Původně plánováno v fázi 2 (context.md B.7).
+- [ ] Transparent token refresh na 401 — odloženo (TASK 1.6 nebo přidat do fáze 2).
 
 ---
 
