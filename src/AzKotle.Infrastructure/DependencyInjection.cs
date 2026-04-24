@@ -4,6 +4,7 @@ using AzKotle.Infrastructure.Persistence;
 using AzKotle.Infrastructure.Persistence.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AzKotle.Infrastructure;
 
@@ -13,9 +14,9 @@ public static class DependencyInjection
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        services.AddSingleton<AmbientTenantContext>();
-        services.AddSingleton<ITenantContext>(sp => sp.GetRequiredService<AmbientTenantContext>());
-        services.AddSingleton<TenantContextInterceptor>();
+        services.TryAddSingleton<AmbientTenantContext>();
+        services.TryAddSingleton<ITenantContext>(sp => sp.GetRequiredService<AmbientTenantContext>());
+        services.TryAddSingleton<TenantContextInterceptor>();
 
         services.AddDbContext<AzKotleDbContext>((sp, options) =>
         {

@@ -76,11 +76,11 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 
 ### TASK 1.3 — Tenant resolution middleware
 
-- [ ] `Web/Middleware/TenantResolutionMiddleware.cs`.
-- [ ] Strategie: 1) JWT claim `tenant_id`, 2) subdoména.
-- [ ] `HttpContext.Items["TenantId"]` a `ITenantContext.Current`.
-- [ ] `ISaveChangesInterceptor` → `SET LOCAL app.current_tenant_id`.
-- [ ] Integrační test: cross-tenant access = 404.
+- [x] `Api/MultiTenancy/TenantResolutionMiddleware.cs`.
+- [x] Strategie: 1) JWT claim `tenant_id`, 2) subdoména.
+- [x] `HttpContext.Items["AzKotle.TenantId"]` a `ITenantContext.Current` (přes `HttpTenantContext`).
+- [x] ~~`ISaveChangesInterceptor` → `SET LOCAL app.current_tenant_id`~~ — revidováno v TASK 1.2, viz [ADR 001](adr/001-rls-connection-interceptor.md). Izolace běží přes `DbConnectionInterceptor` + session-level `set_config`, který pokrývá čtení i zápis.
+- [ ] ~~Integrační test: cross-tenant access = 404~~ — přesunuto do TASK 2.2 (zatím není business endpoint, aby dávalo smysl). Middleware testy v 1.3 pokrývají JWT, subdoménu, reserved subdomain, unknown slug, precedence a `[AllowAnonymousTenant]`.
 
 ### TASK 1.4 — Auth endpoints (register, login, refresh)
 

@@ -1,12 +1,18 @@
+using AzKotle.Api.MultiTenancy;
+using AzKotle.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+var connectionString = builder.Configuration.GetConnectionString("AzKotleDb")
+    ?? "Host=localhost;Port=5432;Database=azkotle;Username=postgres;Password=postgres";
+
+builder.Services.AddAzKotleDb(connectionString);
+builder.Services.AddAzKotleHttpTenancy();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -14,28 +20,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseTenantResolution();
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .WithName("Health")
+    .WithMetadata(new AllowAnonymousTenantAttribute());
+
+app.MapGet("/whoami", (AzKotle.Application.Abstractions.ITenantContext tenantContext) =>
+        Results.Ok(new { tenantId = tenantContext.Current?.Value }))
+    .WithName("WhoAmI");
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+public partial class Program;
