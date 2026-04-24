@@ -9,6 +9,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  HUSKY: 0  # skip husky hook install in CI
+
 jobs:
   build-test:
     name: Build + Test + Format

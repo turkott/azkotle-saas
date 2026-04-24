@@ -38,16 +38,31 @@ tests/
 ```bash
 git clone https://github.com/turkott/azkotle-saas.git
 cd azkotle-saas
+cp .env.example .env   # nastav heslo v .env
 
-# Lokální DB + Redis
-docker compose up -d
-
-# Build
+# Build (automaticky nainstaluje git hooks přes Husky.Net)
 dotnet build
+
+# Lokální DB + Redis + Seq
+docker compose -f deploy/docker-compose.dev.yml --env-file .env up -d
 
 # Testy
 dotnet test
 ```
+
+## Konvence commitů
+
+Projekt vyžaduje [Conventional Commits](https://www.conventionalcommits.org) — `commit-msg` hook validuje formát.
+
+```
+<type>(scope)?: <description>
+
+Types: feat, fix, chore, docs, test, refactor, style, perf, ci, build, revert
+```
+
+Příklad: `feat(auth): add JWT refresh rotation`
+
+Před commitem se spustí `dotnet format --verify-no-changes` + `dotnet test --filter Category=Unit` (pre-commit hook).
 
 ## Dokumentace
 

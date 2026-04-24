@@ -1,0 +1,17 @@
+{
+  "$schema": "https://alirezanet.github.io/Husky.Net/schema.json",
+  "tasks": [
+    {
+      "name": "format-check",
+      "group": "pre-commit",
+      "command": "dotnet",
+      "args": ["format", "--verify-no-changes", "--no-restore"]
+    },
+    {
+      "name": "unit-tests",
+      "group": "pre-commit",
+      "command": "dotnet",
+      "args": ["test", "--no-restore", "--filter", "Category=Unit", "--nologo", "--verbosity", "quiet"]
+    }
+  ]
+}

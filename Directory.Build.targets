@@ -1,0 +1,7 @@
+<Project>
+  <Target Name="husky" BeforeTargets="Restore;CollectPackageReferences"
+          Condition="'$(HUSKY)' != '0' AND '$(IsCrossTargetingBuild)' != 'true'">
+    <Exec Command="dotnet tool restore" StandardOutputImportance="Low" StandardErrorImportance="High" ContinueOnError="true" />
+    <Exec Command="dotnet husky install" StandardOutputImportance="Low" StandardErrorImportance="High" ContinueOnError="true" />
+  </Target>
+</Project>
