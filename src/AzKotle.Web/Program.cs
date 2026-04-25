@@ -31,6 +31,8 @@ app.UseHttpsRedirection();
 
 app.UseAntiforgery();
 
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()

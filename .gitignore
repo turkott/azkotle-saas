@@ -3,8 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-# dotenv files
+# dotenv files (skutečné secrets, nikdy v repu — example šablony se commitují)
 .env
+.env.*
+!.env.*.example
 
 # User-specific files
 *.rsuser

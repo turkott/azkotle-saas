@@ -4,6 +4,7 @@ using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
+using Microsoft.EntityFrameworkCore;
 using AzKotle.Infrastructure.External;
 using AzKotle.Infrastructure.Inspections;
 using AzKotle.Infrastructure.Pdf;
@@ -118,6 +119,22 @@ app.UseTenantResolution();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithName("Health")
+    .WithMetadata(new AllowAnonymousTenantAttribute())
+    .AllowAnonymous();
+
+app.MapGet("/health/ready", async (AzKotle.Infrastructure.Persistence.AzKotleDbContext db, CancellationToken ct) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1", ct);
+        return Results.Ok(new { status = "ready" });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "not_ready", error = ex.GetType().Name }, statusCode: 503);
+    }
+})
+    .WithName("HealthReady")
     .WithMetadata(new AllowAnonymousTenantAttribute())
     .AllowAnonymous();
 

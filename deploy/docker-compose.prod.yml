@@ -1,0 +1,143 @@
+name: azkotle-prod
+
+# Compose pro VPS AA-kotle.
+# - app:  Blazor Web na app.az-kotle.cz
+# - api:  ASP.NET Core API na api.az-kotle.cz
+# - postgres + redis + seq (privátní, dostupné jen v internal síti)
+# - caddy: reverse proxy + auto-HTTPS pro veřejné domény
+# - postgres-backup: denní pg_dump → Backblaze B2
+#
+# Spuštění:  docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d
+# Update:    docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod pull && docker compose ... up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+  seq:
+    image: datalust/seq:latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      # SEQ_FIRSTRUN_ADMINPASSWORDHASH set in .env.prod (use `seq config hash <pwd>` to generate).
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: ${SEQ_ADMIN_PASSWORD_HASH}
+    volumes:
+      - seq_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost/api/"]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+    networks: [internal]
+
+  api:
+    image: ghcr.io/turkott/azkotle-api:${AZKOTLE_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__AzKotleDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Pooling=true;Maximum Pool Size=20"
+      Jwt__Issuer: "https://api.az-kotle.cz"
+      Jwt__Audience: "azkotle-api"
+      Jwt__Secret: ${AZKOTLE_JWT_SECRET:?AZKOTLE_JWT_SECRET must be set (>= 32 chars)}
+      Jwt__AccessTokenMinutes: "15"
+      Jwt__RefreshTokenDays: "30"
+      Storage__Bucket: ${STORAGE_BUCKET}
+      Storage__ServiceUrl: ${STORAGE_SERVICE_URL}
+      Storage__Region: ${STORAGE_REGION}
+      Storage__AccessKey: ${STORAGE_ACCESS_KEY}
+      Storage__SecretKey: ${STORAGE_SECRET_KEY}
+      Storage__ForcePathStyle: "true"
+      Cors__AllowedOrigins__0: "https://app.az-kotle.cz"
+      Cors__AllowedOrigins__1: "https://az-kotle.cz"
+    networks: [internal]
+
+  app:
+    image: ghcr.io/turkott/azkotle-web:${AZKOTLE_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Api__BaseAddress: "https://api.az-kotle.cz"
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal, public]
+
+  postgres-backup:
+    build:
+      context: ./postgres-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      STORAGE_SERVICE_URL: ${STORAGE_SERVICE_URL}
+      STORAGE_REGION: ${STORAGE_REGION}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
+      STORAGE_BUCKET: ${BACKUP_BUCKET:-${STORAGE_BUCKET}}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-backups/postgres}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_CRON: ${BACKUP_CRON:-0 3 * * *}
+      BACKUP_RUN_ON_START: "false"
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  redis_data:
+  seq_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    internal: false
+  public:

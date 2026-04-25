@@ -1,0 +1,51 @@
+# Caddy reverse proxy pro AZ KOTLE production.
+# Auto-HTTPS přes Let's Encrypt (vyžaduje DNS A/AAAA záznamy směřující na VPS).
+
+{
+    # Globální options.
+    email admin@az-kotle.cz
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+# --- Web (Blazor) ---
+app.az-kotle.cz {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), camera=(), microphone=()"
+        -Server
+    }
+
+    reverse_proxy app:8080 {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+    }
+}
+
+# --- API ---
+api.az-kotle.cz {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    reverse_proxy api:8080 {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+    }
+}
+
+# --- Apex redirect ---
+az-kotle.cz {
+    redir https://app.az-kotle.cz{uri} permanent
+}

@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1.7
+# Multi-stage build for AzKotle.Web (.NET 10 Blazor Web App s WASM klientem).
+# Build context: repo root.
+#
+# Build:   docker build -f deploy/Dockerfile.web -t azkotle-web .
+# Run:     docker run --rm -p 8081:8080 azkotle-web
+
+ARG DOTNET_VERSION=10.0
+ARG ALPINE_VARIANT=alpine
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-${ALPINE_VARIANT} AS build
+WORKDIR /src
+
+# Restore.
+COPY Directory.Packages.props Directory.Build.props NuGet.config* ./
+COPY src/AzKotle.Application/AzKotle.Application.csproj src/AzKotle.Application/
+COPY src/AzKotle.Domain/AzKotle.Domain.csproj         src/AzKotle.Domain/
+COPY src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj src/AzKotle.Infrastructure/
+COPY src/AzKotle.Shared/AzKotle.Shared.csproj          src/AzKotle.Shared/
+COPY src/AzKotle.Web/AzKotle.Web.csproj                src/AzKotle.Web/
+COPY src/AzKotle.Web.Client/AzKotle.Web.Client.csproj  src/AzKotle.Web.Client/
+RUN dotnet restore src/AzKotle.Web/AzKotle.Web.csproj --runtime linux-musl-x64
+
+# Build + publish.
+COPY src/ src/
+RUN dotnet publish src/AzKotle.Web/AzKotle.Web.csproj \
+    -c Release \
+    --no-restore \
+    --runtime linux-musl-x64 \
+    --self-contained false \
+    -p:PublishReadyToRun=false \
+    -o /app/publish
+
+# Final runtime image.
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-${ALPINE_VARIANT} AS runtime
+RUN apk add --no-cache curl tzdata icu-libs \
+    && addgroup -S azkotle \
+    && adduser -S azkotle -G azkotle -u 10001
+ENV TZ=Europe/Prague \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_ENVIRONMENT=Production
+
+WORKDIR /app
+COPY --from=build --chown=azkotle:azkotle /app/publish ./
+USER azkotle
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+ENTRYPOINT ["dotnet", "AzKotle.Web.dll"]
