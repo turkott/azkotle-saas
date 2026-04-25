@@ -9,6 +9,9 @@ using AzKotle.Infrastructure.QrCodes;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +28,8 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBoilerQrSlugGenerator, BoilerQrSlugGenerator>();
+builder.Services.AddSingleton<IQrCodeImageRenderer, QrCoderImageRenderer>();
+builder.Services.AddSingleton<IBoilerLabelPdfRenderer, BoilerLabelPdfRenderer>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {
@@ -117,6 +122,7 @@ app.MapLookupEndpoints();
 app.MapCustomerEndpoints();
 app.MapLocationEndpoints();
 app.MapBoilerEndpoints();
+app.MapQrCodeEndpoints();
 
 app.Run();
 

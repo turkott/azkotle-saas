@@ -129,11 +129,12 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [ ] ~~OpenAPI (Swashbuckle) na `/swagger`~~ — odloženo. Minimal API má `MapOpenApi()` na `/openapi/v1.json`; Swagger UI doplníme později.
 
 ### TASK 2.3 — QR kód generování a discovery endpoint
-- [ ] Formát `AK-XXXX-XX` (Crockford Base32).
-- [ ] Unique constraint + retry at race.
-- [ ] QRCoder PNG/SVG.
-- [ ] `/boilers/{id}/qr-label` — A4 tisková šablona se 4 QR štítky.
-- [ ] Public `/qr/{code}` — anonymní → redirect na login; přihlášený technik → detail kotle.
+- [x] Formát `AK-XXXX-XX` (Crockford Base32) — implementováno v TASK 2.2 (`BoilerQrSlugGenerator`).
+- [x] Unique constraint + retry at race — `BoilerEndpoints.CreateAsync` retry max. 5× při Postgres `23505`.
+- [x] QRCoder PNG (`IQrCodeImageRenderer` → `QrCoderImageRenderer`, ECC level Q).
+- [x] `/api/v1/boilers/{id}/qr-label` — A4 PDF s mřížkou QR štítků (počet konfigurovatelný `?copies=`, default 4, max 24). QuestPDF Community License.
+- [x] `/api/v1/boilers/{id}/qr.png` — bonus PNG endpoint pro samostatný download.
+- [x] Public `/qr/{code}` — anonymní → 302 na `{Web:BaseUrl}/login?redirect=/qr/{code}`; přihlášený → 302 na detail kotle. RLS zajišťuje, že přihlášený uživatel uvidí jen QR ze svého tenantu.
 
 ### TASK 2.4 — Blazor UI: seznam kotlů, detail, editace
 - [ ] `/boilers` — data grid (virtual scroll, filter, search).
