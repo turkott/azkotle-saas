@@ -201,9 +201,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [x] InspectionsApiClient + InspectionSchemaClient v `Web.Client/Api/` + DI.
 - [ ] ~~bUnit testy~~ — repo nemá bUnit, ručně otestovat v browseru.
 
-#### 3.4c — UI „Podepsat a odeslat" (čeká)
-- [ ] Tlačítko volá `POST /sign`, loading state.
-- [ ] Success screen s download linkem na presigned URL.
+#### 3.4c — UI „Podepsat a odeslat" (hotovo)
+- [x] Aktivované „Podepsat a odeslat" tlačítko v `/inspections/{id}` → inline rozbalitelná sekce (per feedback „bez modálních oken") s warning seznamem nevyplněných required polí + signature canvas + „Potvrdit a podepsat" / „Zrušit".
+- [x] Před otevřením sekce auto-flush nepoložených změn (sign jen toho, co je persistováno).
+- [x] `<SignaturePadCanvas>` Razor komponenta — wrapper nad signature_pad@5.0.4 přes IJSObjectReference, per-element instance, high-DPI resize, `JSDisconnectedException` tolerance.
+- [x] `wwwroot/js/signature-pad.js` ES module + `wwwroot/lib/signature_pad/signature_pad.umd.min.js` (vendored UMD, MIT).
+- [x] `<script>` tag v `App.razor` (Web/Components) před blazor.web.js.
+- [x] Po úspěšném sign: read-only mode + zelený success card s SignedAt, SHA-256 a tlačítkem „Stáhnout PDF" (`Nav.NavigateTo(presignedUrl, forceLoad: true)`).
+- [x] Required-field check (`ComputeMissingRequiredFields`) iteruje schema sekce, photo+signature skipnuté, NextDueAt kontrolována zvlášť, zobrazí prvních 5 + „…".
 
 ---
 
