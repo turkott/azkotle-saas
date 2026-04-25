@@ -1,0 +1,204 @@
+@using System.Text.Json
+@using MudBlazor
+
+<MudStack Spacing="3">
+    @foreach (var sec in Schema.Sections)
+    {
+        if (ExcludedSectionIds?.Contains(sec.Id) == true)
+        {
+            continue;
+        }
+
+        <MudCard Outlined>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">@sec.Title</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudStack Spacing="3">
+                    @foreach (var field in sec.Fields)
+                    {
+                        @RenderField(field)
+                    }
+                </MudStack>
+            </MudCardContent>
+        </MudCard>
+    }
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public InspectionFormSchema Schema { get; set; } = default!;
+    [Parameter, EditorRequired] public Dictionary<string, JsonElement?> Model { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public IReadOnlyCollection<string>? ExcludedSectionIds { get; set; }
+
+    private RenderFragment RenderField(InspectionFormField field) => __builder =>
+    {
+        switch (field.Type)
+        {
+            case InspectionFieldTypes.Number:
+                <MudNumericField T="decimal?"
+                                 Label="@LabelWithRequired(field)"
+                                 Value="@GetDecimal(field.Id)"
+                                 ValueChanged="@(v => SetField(field.Id, v))"
+                                 Min="@(field.Min ?? decimal.MinValue)"
+                                 Max="@(field.Max ?? decimal.MaxValue)"
+                                 Step="@(field.Step ?? 1m)"
+                                 Format="@NumberFormat(field)"
+                                 Variant="Variant.Outlined"
+                                 Disabled="@Disabled"
+                                 Required="@field.Required" />
+                break;
+
+            case InspectionFieldTypes.Select:
+                <MudSelect T="string"
+                           Label="@LabelWithRequired(field)"
+                           Value="@GetString(field.Id)"
+                           ValueChanged="@(v => SetField(field.Id, v))"
+                           Variant="Variant.Outlined"
+                           Disabled="@Disabled"
+                           Required="@field.Required"
+                           Clearable="@(!field.Required)">
+                    @foreach (var option in field.Options ?? new List<string>())
+                    {
+                        <MudSelectItem Value="@option">@option</MudSelectItem>
+                    }
+                </MudSelect>
+                break;
+
+            case InspectionFieldTypes.Boolean:
+                <MudCheckBox T="bool?"
+                             Label="@LabelWithRequired(field)"
+                             Value="@GetBool(field.Id)"
+                             ValueChanged="@(v => SetField(field.Id, v))"
+                             TriState="@(!field.Required)"
+                             Color="Color.Primary"
+                             Disabled="@Disabled" />
+                break;
+
+            case InspectionFieldTypes.Textarea:
+                <MudTextField T="string"
+                              Label="@LabelWithRequired(field)"
+                              Value="@GetString(field.Id)"
+                              ValueChanged="@(v => SetField(field.Id, v))"
+                              Lines="3"
+                              Variant="Variant.Outlined"
+                              Disabled="@Disabled"
+                              Required="@field.Required" />
+                break;
+
+            case InspectionFieldTypes.Date:
+                <MudDatePicker Label="@LabelWithRequired(field)"
+                               Date="@GetDate(field.Id)"
+                               DateChanged="@(v => SetField(field.Id, v.HasValue ? DateOnly.FromDateTime(v.Value) : (DateOnly?)null))"
+                               Variant="Variant.Outlined"
+                               Disabled="@Disabled"
+                               Required="@field.Required" />
+                break;
+
+            case InspectionFieldTypes.Photo:
+                <MudAlert Severity="Severity.Info" Dense Variant="Variant.Outlined">
+                    📷 @field.Label — nahrávání fotek bude v další verzi.
+                </MudAlert>
+                break;
+
+            case InspectionFieldTypes.Signature:
+                <MudAlert Severity="Severity.Info" Dense Variant="Variant.Outlined">
+                    ✍️ @field.Label — kreslení podpisu se objeví při „Podepsat a odeslat".
+                </MudAlert>
+                break;
+
+            default:
+                <MudAlert Severity="Severity.Warning" Dense Variant="Variant.Outlined">
+                    Neznámý typ pole: <strong>@field.Type</strong> (@field.Id)
+                </MudAlert>
+                break;
+        }
+    };
+
+    private static string LabelWithRequired(InspectionFormField field) =>
+        field.Required ? $"{field.Label} *" : field.Label;
+
+    private static string NumberFormat(InspectionFormField field) =>
+        field.Step is { } step && step < 1m ? "F2" : "F0";
+
+    private decimal? GetDecimal(string key)
+    {
+        if (!Model.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        var el = raw.Value;
+        return el.ValueKind switch
+        {
+            JsonValueKind.Number => el.TryGetDecimal(out var d) ? d : null,
+            JsonValueKind.String when decimal.TryParse(el.GetString(), out var s) => s,
+            _ => null,
+        };
+    }
+
+    private string? GetString(string key)
+    {
+        if (!Model.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        var el = raw.Value;
+        return el.ValueKind switch
+        {
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.GetRawText(),
+            _ => null,
+        };
+    }
+
+    private bool? GetBool(string key)
+    {
+        if (!Model.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        var el = raw.Value;
+        return el.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null,
+        };
+    }
+
+    private DateTime? GetDate(string key)
+    {
+        if (!Model.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        var el = raw.Value;
+        if (el.ValueKind == JsonValueKind.String && DateTime.TryParse(el.GetString(), out var dt))
+        {
+            return dt;
+        }
+        return null;
+    }
+
+    private void SetField(string key, object? value)
+    {
+        if (Disabled) return;
+
+        JsonElement? element = value switch
+        {
+            null => null,
+            decimal d => JsonDocument.Parse(d.ToString(System.Globalization.CultureInfo.InvariantCulture)).RootElement.Clone(),
+            bool b => JsonDocument.Parse(b ? "true" : "false").RootElement.Clone(),
+            string s when string.IsNullOrEmpty(s) => null,
+            string s => JsonDocument.Parse(JsonSerializer.Serialize(s)).RootElement.Clone(),
+            DateOnly dt => JsonDocument.Parse(JsonSerializer.Serialize(dt.ToString("yyyy-MM-dd"))).RootElement.Clone(),
+            DateTime dt => JsonDocument.Parse(JsonSerializer.Serialize(DateOnly.FromDateTime(dt).ToString("yyyy-MM-dd"))).RootElement.Clone(),
+            _ => JsonDocument.Parse(JsonSerializer.Serialize(value)).RootElement.Clone(),
+        };
+
+        if (element.HasValue)
+        {
+            Model[key] = element;
+        }
+        else
+        {
+            Model.Remove(key);
+        }
+        OnChanged.InvokeAsync();
+    }
+}

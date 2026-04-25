@@ -34,5 +34,12 @@ builder.Services.AddHttpClient<LocationsApiClient>(client => client.BaseAddress 
     .AddHttpMessageHandler<JwtAuthHandler>();
 builder.Services.AddHttpClient<BoilersApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
     .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<InspectionsApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<JwtAuthHandler>();
+
+builder.Services.AddHttpClient<InspectionSchemaClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress);
+});
 
 await builder.Build().RunAsync();

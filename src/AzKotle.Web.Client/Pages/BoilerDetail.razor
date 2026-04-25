@@ -2,14 +2,17 @@
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @using AzKotle.Application.Boilers
 @using AzKotle.Application.Customers
+@using AzKotle.Application.Inspections
 @using AzKotle.Application.Locations
 @using AzKotle.Domain.Entities.Boilers
+@using AzKotle.Domain.Entities.Inspections
 @using AzKotle.Web.Client.Api
 @using AzKotle.Web.Client.Auth
 @using Microsoft.AspNetCore.Components.Authorization
 @inject BoilersApiClient BoilersClient
 @inject LocationsApiClient LocationsClient
 @inject CustomersApiClient CustomersClient
+@inject InspectionsApiClient InspectionsClient
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -39,7 +42,7 @@
                 <MudSpacer />
                 <MudButton StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Outlined" OnClick="DownloadQrPdf">QR štítek (PDF)</MudButton>
                 <MudButton StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" Variant="Variant.Filled" Color="Color.Primary"
-                           OnClick="OpenInspection" Class="ml-2">Zaznamenat revizi</MudButton>
+                           OnClick="StartInspection" Disabled="_creatingInspection" Class="ml-2">Nová revize NV 191</MudButton>
             </MudStack>
 
             <MudGrid>
@@ -171,6 +174,7 @@
     private string _locationLabel = string.Empty;
     private bool _loading = true;
     private bool _editMode;
+    private bool _creatingInspection;
     private BoilerEditModel _edit = new();
     private string? _qrPngDataUri;
 
@@ -305,26 +309,20 @@
         }
     }
 
-    private async Task OpenInspection()
+    private async Task StartInspection()
     {
-        if (_boiler is null) return;
-        var dialog = await DialogService.ShowAsync<InspectionDialog>("Zaznamenat revizi",
-            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: InspectionFormData data })
+        if (_boiler is null || _creatingInspection) return;
+        _creatingInspection = true;
+        try
         {
-            try
-            {
-                await BoilersClient.RecordInspectionAsync(_boiler.Id, new RecordInspectionRequest(
-                    DateOnly.FromDateTime(data.PerformedAt!.Value),
-                    data.NextDueAt.HasValue ? DateOnly.FromDateTime(data.NextDueAt.Value) : null));
-                Snackbar.Add("Revize zaznamenána.", Severity.Success);
-                await LoadAsync();
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Záznam selhal: {ex.Message}", Severity.Error);
-            }
+            var draft = await InspectionsClient.CreateAsync(new CreateInspectionRequest(
+                _boiler.Id, InspectionType.AnnualNv191, DateTime.UtcNow));
+            Nav.NavigateTo($"/inspections/{draft.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Vytvoření revize selhalo: {ex.Message}", Severity.Error);
+            _creatingInspection = false;
         }
     }
 

@@ -1,0 +1,359 @@
+@page "/inspections/{Id:guid}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using System.Text.Json
+@using AzKotle.Application.Boilers
+@using AzKotle.Application.Inspections
+@using AzKotle.Domain.Entities.Inspections
+@using AzKotle.Web.Client.Api
+@using AzKotle.Web.Client.Inspections
+@using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
+@inject InspectionsApiClient InspectionsClient
+@inject InspectionSchemaClient SchemaClient
+@inject BoilersApiClient BoilersClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Revize · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate />
+        }
+        else if (_inspection is null || _schema is null)
+        {
+            <MudAlert Severity="Severity.Error">Revize nenalezena nebo nemáš přístup.</MudAlert>
+            <MudButton Class="mt-4" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/boilers"))">
+                Zpět
+            </MudButton>
+        }
+        else
+        {
+            <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                               OnClick="@(() => Nav.NavigateTo($"/boilers/{_inspection.BoilerId}"))" />
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.h5">@_schema.Title</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @(_boiler is null
+                            ? $"Kotel {_inspection.BoilerId.ToString()[..8]}…"
+                            : $"{_boiler.QrCode} · {_boiler.Manufacturer} {_boiler.Model}")
+                        · vytvořeno @_inspection.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                    </MudText>
+                </MudStack>
+                <MudSpacer />
+                <MudChip T="string" Color="@StatusColor(_inspection.Status)" Size="Size.Medium" Variant="Variant.Filled">
+                    @StatusLabel(_inspection.Status)
+                </MudChip>
+            </MudStack>
+
+            @if (_isReadOnly)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4">
+                    Revize je ve stavu <strong>@StatusLabel(_inspection.Status)</strong> — formulář je jen ke čtení.
+                </MudAlert>
+            }
+            else
+            {
+                <MudPaper Class="pa-3 mb-4 d-flex align-center" Elevation="0" Style="position: sticky; top: 0; z-index: 10;">
+                    @SaveStatusIcon()
+                    <MudText Typo="Typo.body2" Class="ml-2">@SaveStatusText()</MudText>
+                    <MudSpacer />
+                    <MudButton StartIcon="@Icons.Material.Filled.Save" Variant="Variant.Outlined"
+                               OnClick="SaveNowAsync" Disabled="@(_saveState == SaveState.Saving)">
+                        Uložit teď
+                    </MudButton>
+                </MudPaper>
+            }
+
+            <DynamicForm Schema="_schema" Model="_formModel"
+                         ExcludedSectionIds="@_excludedSections"
+                         OnChanged="OnFormChanged"
+                         Disabled="_isReadOnly" />
+
+            <MudCard Outlined Class="mt-3">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Závěr revize</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudStack Spacing="3">
+                        <MudTextField T="string"
+                                      Label="Závady"
+                                      Value="@_findings"
+                                      ValueChanged="@(v => { _findings = v; ScheduleAutosave(); })"
+                                      Lines="3"
+                                      Variant="Variant.Outlined"
+                                      Disabled="_isReadOnly"
+                                      Counter="@AzKotle.Domain.Entities.Inspections.Inspection.FindingsMaxLength"
+                                      MaxLength="@AzKotle.Domain.Entities.Inspections.Inspection.FindingsMaxLength" />
+                        <MudTextField T="string"
+                                      Label="Doporučení"
+                                      Value="@_recommendations"
+                                      ValueChanged="@(v => { _recommendations = v; ScheduleAutosave(); })"
+                                      Lines="3"
+                                      Variant="Variant.Outlined"
+                                      Disabled="_isReadOnly"
+                                      Counter="@AzKotle.Domain.Entities.Inspections.Inspection.RecommendationsMaxLength"
+                                      MaxLength="@AzKotle.Domain.Entities.Inspections.Inspection.RecommendationsMaxLength" />
+                        <MudDatePicker Label="Termín další revize *"
+                                       Date="@_nextDueAt"
+                                       DateChanged="@(v => { _nextDueAt = v; ScheduleAutosave(); })"
+                                       Variant="Variant.Outlined"
+                                       Disabled="_isReadOnly"
+                                       MinDate="DateTime.Today" />
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+
+            @if (!_isReadOnly)
+            {
+                <MudStack Row Class="mt-4">
+                    <MudSpacer />
+                    <MudTooltip Text="Bude aktivní v dalším kroku (TASK 3.4c).">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Done" Disabled>
+                            Podepsat a odeslat
+                        </MudButton>
+                    </MudTooltip>
+                </MudStack>
+            }
+            else
+            {
+                <MudStack Row Class="mt-4" AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" />
+                    <MudText Typo="Typo.body2">
+                        Podepsáno @_inspection.SignedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ·
+                        SHA-256 <code>@_inspection.PdfSha256</code>
+                    </MudText>
+                </MudStack>
+            }
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private static readonly IReadOnlyCollection<string> _excludedSections = new[] { "summary" };
+
+    [Parameter] public Guid Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private InspectionDto? _inspection;
+    private InspectionFormSchema? _schema;
+    private BoilerDto? _boiler;
+    private Dictionary<string, JsonElement?> _formModel = new();
+    private string? _findings;
+    private string? _recommendations;
+    private DateTime? _nextDueAt;
+    private bool _loading = true;
+    private bool _isReadOnly;
+    private SaveState _saveState = SaveState.Saved;
+    private CancellationTokenSource? _autosaveCts;
+
+    private static readonly TimeSpan _autosaveDelay = TimeSpan.FromSeconds(5);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _inspection = await InspectionsClient.GetAsync(Id);
+            if (_inspection is null) return;
+
+            _schema = await SchemaClient.LoadAsync("nv191_2022");
+
+            _formModel = ParseFormData(_inspection.FormDataJson);
+            _findings = _inspection.Findings;
+            _recommendations = _inspection.Recommendations;
+            _nextDueAt = _inspection.NextDueAt?.ToDateTime(TimeOnly.MinValue);
+            _isReadOnly = _inspection.Status != InspectionStatus.Draft;
+
+            _ = LoadBoilerAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Načtení selhalo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadBoilerAsync()
+    {
+        if (_inspection is null) return;
+        try
+        {
+            _boiler = await BoilersClient.GetAsync(_inspection.BoilerId);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Decorative — silently swallow.
+        }
+    }
+
+    private static Dictionary<string, JsonElement?> ParseFormData(string json)
+    {
+        var result = new Dictionary<string, JsonElement?>();
+        if (string.IsNullOrWhiteSpace(json) || json == "{}")
+            return result;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return result;
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                result[p.Name] = p.Value.Clone();
+            }
+        }
+        catch (JsonException)
+        {
+            // Corrupted form data — start fresh, don't crash the page.
+        }
+        return result;
+    }
+
+    private async Task OnFormChanged()
+    {
+        ScheduleAutosave();
+        await Task.CompletedTask;
+    }
+
+    private void ScheduleAutosave()
+    {
+        if (_isReadOnly) return;
+        _saveState = SaveState.Dirty;
+        StateHasChanged();
+
+        _autosaveCts?.Cancel();
+        _autosaveCts = new CancellationTokenSource();
+        var ct = _autosaveCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(_autosaveDelay, ct);
+                await InvokeAsync(SaveAsync);
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private async Task SaveNowAsync()
+    {
+        _autosaveCts?.Cancel();
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_isReadOnly || _inspection is null) return;
+        if (_saveState == SaveState.Saving) return;
+
+        _saveState = SaveState.Saving;
+        StateHasChanged();
+
+        try
+        {
+            var json = SerializeFormData(_formModel);
+            var nextDue = _nextDueAt.HasValue ? DateOnly.FromDateTime(_nextDueAt.Value) : (DateOnly?)null;
+
+            var updated = await InspectionsClient.UpdateDraftAsync(_inspection.Id,
+                new UpdateInspectionDraftRequest(json, _findings, _recommendations, nextDue));
+
+            _inspection = updated;
+            _saveState = SaveState.Saved;
+        }
+        catch (Exception ex)
+        {
+            _saveState = SaveState.Error;
+            Snackbar.Add($"Uložení selhalo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private static string SerializeFormData(Dictionary<string, JsonElement?> model)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var kvp in model)
+            {
+                if (kvp.Value is null) continue;
+                writer.WritePropertyName(kvp.Key);
+                kvp.Value.Value.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        }
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string StatusLabel(InspectionStatus status) => status switch
+    {
+        InspectionStatus.Draft => "Rozpracovaná",
+        InspectionStatus.Signed => "Podepsaná",
+        InspectionStatus.Archived => "Archivovaná",
+        _ => status.ToString(),
+    };
+
+    private static Color StatusColor(InspectionStatus status) => status switch
+    {
+        InspectionStatus.Draft => Color.Warning,
+        InspectionStatus.Signed => Color.Success,
+        InspectionStatus.Archived => Color.Default,
+        _ => Color.Default,
+    };
+
+    private RenderFragment SaveStatusIcon() => _saveState switch
+    {
+        SaveState.Saved => @<MudIcon Icon="@Icons.Material.Filled.CloudDone" Color="Color.Success" />,
+        SaveState.Dirty => @<MudIcon Icon="@Icons.Material.Filled.CloudUpload" Color="Color.Warning" />,
+        SaveState.Saving => @<MudProgressCircular Size="Size.Small" Indeterminate />,
+        SaveState.Error => @<MudIcon Icon="@Icons.Material.Filled.CloudOff" Color="Color.Error" />,
+        _ => @<MudIcon Icon="@Icons.Material.Filled.Cloud" />,
+    };
+
+    private string SaveStatusText() => _saveState switch
+    {
+        SaveState.Saved => $"Uloženo {(_inspection?.UpdatedAt ?? _inspection?.CreatedAt)?.ToLocalTime().ToString("HH:mm:ss")}",
+        SaveState.Dirty => "Změny neuloženy — uloží se za chvíli…",
+        SaveState.Saving => "Ukládám…",
+        SaveState.Error => "Uložení selhalo — zkus znovu kliknutím na „Uložit teď“.",
+        _ => string.Empty,
+    };
+
+    public void Dispose()
+    {
+        _autosaveCts?.Cancel();
+        _autosaveCts?.Dispose();
+    }
+
+    private enum SaveState { Saved, Dirty, Saving, Error }
+}
