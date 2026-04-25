@@ -5,6 +5,7 @@ using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
 using AzKotle.Infrastructure.External;
+using AzKotle.Infrastructure.QrCodes;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -23,6 +24,7 @@ builder.Services.AddAzKotleHttpTenancy();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<IBoilerQrSlugGenerator, BoilerQrSlugGenerator>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {
@@ -112,6 +114,9 @@ app.MapGet("/whoami", (ITenantContext tenantContext) =>
 
 app.MapAuthEndpoints();
 app.MapLookupEndpoints();
+app.MapCustomerEndpoints();
+app.MapLocationEndpoints();
+app.MapBoilerEndpoints();
 
 app.Run();
 

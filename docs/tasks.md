@@ -119,11 +119,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [x] Unit testy pro všechny invariants (51 testů: 14 Customer + 12 Location + 13 Boiler).
 
 ### TASK 2.2 — CRUD API: /api/v1/customers, /locations, /boilers
-- [ ] GET (pagination + filter), GET by id, POST, PUT, DELETE (soft delete).
-- [ ] Cursor-based pagination (`{ items, nextCursor }`).
-- [ ] FluentValidation, české hlášky.
-- [ ] Integrační testy + cross-tenant access test.
-- [ ] OpenAPI (Swashbuckle) na `/swagger` (Development).
+- [x] GET (pagination + filter), GET by id, POST, PUT, DELETE.
+- [x] Cursor-based pagination (`{ items, nextCursor }`) — cursor je timestamp-based (CreatedAt). Tie-breaking pro shodné CreatedAt řešíme v 2.4 pokud bude potřeba.
+- [x] FluentValidation, české hlášky.
+- [x] Integrační testy + cross-tenant access test (Testcontainers PG s non-superuser `azkotle_app` rolí pro skutečné RLS enforcement). 9 testů: happy CRUD pro každý zdroj, cross-tenant 404 pro Customer + Boiler, validace, pagination, anonymous → 401.
+- [x] EF konfigurace + migrace `AddCustomersLocationsBoilers` s FORCE RLS policies.
+- [x] QR slug generátor (placeholder Crockford Base32 v Infrastructure; QR image + PDF štítek v 2.3).
+- [ ] ~~DELETE soft delete~~ — odloženo. Hard delete pro MVP; soft delete přidáme až bude potřeba audit trail.
+- [ ] ~~OpenAPI (Swashbuckle) na `/swagger`~~ — odloženo. Minimal API má `MapOpenApi()` na `/openapi/v1.json`; Swagger UI doplníme později.
 
 ### TASK 2.3 — QR kód generování a discovery endpoint
 - [ ] Formát `AK-XXXX-XX` (Crockford Base32).

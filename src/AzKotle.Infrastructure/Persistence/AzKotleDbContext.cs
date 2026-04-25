@@ -1,4 +1,7 @@
 using AzKotle.Domain.Entities.Auth;
+using AzKotle.Domain.Entities.Boilers;
+using AzKotle.Domain.Entities.Customers;
+using AzKotle.Domain.Entities.Locations;
 using AzKotle.Domain.Entities.Tenants;
 using AzKotle.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +19,12 @@ public sealed class AzKotleDbContext : DbContext
     public DbSet<User> Users => Set<User>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    public DbSet<Location> Locations => Set<Location>();
+
+    public DbSet<Boiler> Boilers => Set<Boiler>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
