@@ -4,11 +4,15 @@
 #
 # Build:   docker build -f deploy/Dockerfile.web -t azkotle-web .
 # Run:     docker run --rm -p 8081:8080 azkotle-web
+#
+# Pozn.: NEpoužíváme alpine/musl variantu (na rozdíl od Dockerfile.api),
+# protože Blazor WASM vyžaduje Microsoft.NETCore.App.Runtime.Mono.linux-*-x64,
+# který pro .NET 10 zatím není pro linux-musl-x64 (jen linux-x64 = Debian).
+# Image je proto větší (~210 MB vs ~120 MB), ale runtime stejně rychlé.
 
 ARG DOTNET_VERSION=10.0
-ARG ALPINE_VARIANT=alpine
 
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-${ALPINE_VARIANT} AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
 
 # Restore.
@@ -19,23 +23,25 @@ COPY src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj src/AzKotle.Infras
 COPY src/AzKotle.Shared/AzKotle.Shared.csproj          src/AzKotle.Shared/
 COPY src/AzKotle.Web/AzKotle.Web.csproj                src/AzKotle.Web/
 COPY src/AzKotle.Web.Client/AzKotle.Web.Client.csproj  src/AzKotle.Web.Client/
-RUN dotnet restore src/AzKotle.Web/AzKotle.Web.csproj --runtime linux-musl-x64
+ENV HUSKY=0
+RUN dotnet restore src/AzKotle.Web/AzKotle.Web.csproj
 
 # Build + publish.
 COPY src/ src/
 RUN dotnet publish src/AzKotle.Web/AzKotle.Web.csproj \
     -c Release \
     --no-restore \
-    --runtime linux-musl-x64 \
     --self-contained false \
     -p:PublishReadyToRun=false \
     -o /app/publish
 
-# Final runtime image.
-FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-${ALPINE_VARIANT} AS runtime
-RUN apk add --no-cache curl tzdata icu-libs \
-    && addgroup -S azkotle \
-    && adduser -S azkotle -G azkotle -u 10001
+# Final runtime image (debian-based, kvůli kompatibilitě s WASM Mono).
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r azkotle \
+    && useradd -r -g azkotle -u 10001 azkotle
 ENV TZ=Europe/Prague \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \

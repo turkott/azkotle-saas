@@ -18,6 +18,7 @@ COPY src/AzKotle.Application/AzKotle.Application.csproj src/AzKotle.Application/
 COPY src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj src/AzKotle.Infrastructure/
 COPY src/AzKotle.Api/AzKotle.Api.csproj                src/AzKotle.Api/
 COPY src/AzKotle.Shared/AzKotle.Shared.csproj          src/AzKotle.Shared/
+ENV HUSKY=0
 RUN dotnet restore src/AzKotle.Api/AzKotle.Api.csproj --runtime linux-musl-x64
 
 # Build + publish.
