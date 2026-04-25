@@ -180,11 +180,25 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [ ] ~~Key schema fixovaný v storage~~ — TASK 3.4 (sign flow ho používá: `tenants/{tenantId}/inspections/{year}/{inspectionId}.pdf`).
 
 ### TASK 3.4 — Inspection sign flow
-- [ ] `POST /api/v1/inspections/{id}/sign`.
-- [ ] Pipeline: validate → generate PDF → SHA256 → upload B2 → update DB → queue email.
-- [ ] Background worker (Hangfire/Quartz).
-- [ ] `audit_log` zápis (IP, UA).
-- [ ] UI: „Podepsat a odeslat" → loading → success screen + download link.
+
+#### 3.4a — Synchronní sign endpoint + audit log (hotovo)
+- [x] `POST /api/v1/inspections/{id}/sign` (`InspectionEndpoints.SignAsync`).
+- [x] Pipeline (synchronně): validate draft → render PDF → SHA256 → upload S3 (`tenants/{tenantId}/inspections/{year}/{inspectionId}.pdf`) → `Inspection.Sign()` → audit_log zápis → presigned download URL (TTL 7 dní).
+- [x] `audit_log` tabulka + `AuditLog` entity (action, target, actor, IP, UA, metadata jsonb) s FORCE RLS + tenant_isolation policy.
+- [x] `IFileStorage` registrované v Program.cs (`Storage:*` config) + MinIO sidecar v dev compose.
+- [x] `AzKotleApiFactory` rozšířený o MinIO Testcontainer.
+- [x] 7 integračních testů (happy path, audit log row, twice → 400, non-existent → 404, cross-tenant → 404, invalid base64 → 400, key convention) + 10 unit testů `AuditLog`.
+- [ ] ~~Email odesílání + queue~~ — odloženo (vědomý skip pro MVP).
+- [ ] ~~Background worker (Hangfire/Quartz)~~ — odloženo (synchronní pipeline < 3 s je pro MVP OK; přijde s emailem nebo ve Fázi 4).
+
+#### 3.4b — Blazor DynamicForm + autosave (čeká)
+- [ ] `<DynamicForm Schema Model />` renderer pro `nv191_2022.json` (MudBlazor pole dle typu: number/select/boolean/date/textarea/photo/signature).
+- [ ] Stránka `/inspections/{id}` pro vyplňování draftu.
+- [ ] Autosave debounce 5 s → PUT `/draft`.
+
+#### 3.4c — UI „Podepsat a odeslat" (čeká)
+- [ ] Tlačítko volá `POST /sign`, loading state.
+- [ ] Success screen s download linkem na presigned URL.
 
 ---
 
