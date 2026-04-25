@@ -114,25 +114,98 @@
 
             @if (!_isReadOnly)
             {
-                <MudStack Row Class="mt-4">
-                    <MudSpacer />
-                    <MudTooltip Text="Bude aktivní v dalším kroku (TASK 3.4c).">
+                @if (!_showSignSection)
+                {
+                    <MudStack Row Class="mt-4">
+                        <MudSpacer />
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.Done" Disabled>
+                                   StartIcon="@Icons.Material.Filled.Done"
+                                   OnClick="OpenSignSection">
                             Podepsat a odeslat
                         </MudButton>
-                    </MudTooltip>
-                </MudStack>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudCard Outlined Class="mt-3">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Podpis a odeslání</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudStack Spacing="3">
+                                @if (_missingRequiredFields.Count > 0)
+                                {
+                                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense>
+                                        <MudText Typo="Typo.body2">
+                                            <strong>Nevyplněná povinná pole (@_missingRequiredFields.Count):</strong>
+                                            @string.Join(", ", _missingRequiredFields.Take(5))@(_missingRequiredFields.Count > 5 ? "…" : "")
+                                        </MudText>
+                                        <MudText Typo="Typo.caption" Class="mt-1">
+                                            Můžeš podepsat i tak, ale revize bude označena jako neúplná.
+                                        </MudText>
+                                    </MudAlert>
+                                }
+
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    Po podpisu bude revize uzamčena, vygeneruje se PDF s SHA-256 otiskem a uloží
+                                    se na trvanlivé úložiště. Tato akce je nevratná.
+                                </MudText>
+
+                                <SignaturePadCanvas @ref="_signaturePad" Height="220" />
+
+                                <MudStack Row>
+                                    <MudButton OnClick="CancelSignSection" Disabled="_signing">Zrušit</MudButton>
+                                    <MudSpacer />
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Done"
+                                               OnClick="ConfirmSignAsync" Disabled="_signing">
+                                        @if (_signing)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate Class="mr-2" />
+                                            <span>Podepisuji…</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Potvrdit a podepsat</span>
+                                        }
+                                    </MudButton>
+                                </MudStack>
+                            </MudStack>
+                        </MudCardContent>
+                    </MudCard>
+                }
             }
             else
             {
-                <MudStack Row Class="mt-4" AlignItems="AlignItems.Center">
-                    <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" />
-                    <MudText Typo="Typo.body2">
-                        Podepsáno @_inspection.SignedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ·
-                        SHA-256 <code>@_inspection.PdfSha256</code>
-                    </MudText>
-                </MudStack>
+                <MudCard Outlined Class="mt-4" Style="border-color: var(--mud-palette-success);">
+                    <MudCardContent>
+                        <MudStack Spacing="2">
+                            <MudStack Row AlignItems="AlignItems.Center">
+                                <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Large" />
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.h6">Revize podepsána</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                        @_inspection.SignedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                    </MudText>
+                                </MudStack>
+                                <MudSpacer />
+                                @if (!string.IsNullOrEmpty(_downloadUrl))
+                                {
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Download"
+                                               OnClick="@(() => Nav.NavigateTo(_downloadUrl!, forceLoad: true))">
+                                        Stáhnout PDF
+                                    </MudButton>
+                                }
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                SHA-256: <code>@_inspection.PdfSha256</code>
+                            </MudText>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
             }
         }
     </Authorized>
@@ -155,6 +228,11 @@
     private bool _isReadOnly;
     private SaveState _saveState = SaveState.Saved;
     private CancellationTokenSource? _autosaveCts;
+    private bool _showSignSection;
+    private bool _signing;
+    private SignaturePadCanvas? _signaturePad;
+    private List<string> _missingRequiredFields = new();
+    private string? _downloadUrl;
 
     private static readonly TimeSpan _autosaveDelay = TimeSpan.FromSeconds(5);
 
@@ -348,6 +426,100 @@
         SaveState.Error => "Uložení selhalo — zkus znovu kliknutím na „Uložit teď“.",
         _ => string.Empty,
     };
+
+    private async Task OpenSignSection()
+    {
+        if (_isReadOnly || _inspection is null) return;
+
+        // Save any pending changes first so what we sign matches what's persisted.
+        if (_saveState != SaveState.Saved)
+        {
+            await SaveNowAsync();
+            if (_saveState == SaveState.Error)
+            {
+                Snackbar.Add("Před podpisem se nepodařilo uložit změny — zkus to znovu.", Severity.Warning);
+                return;
+            }
+        }
+
+        _missingRequiredFields = ComputeMissingRequiredFields();
+        _showSignSection = true;
+    }
+
+    private void CancelSignSection()
+    {
+        _showSignSection = false;
+        _missingRequiredFields.Clear();
+    }
+
+    private async Task ConfirmSignAsync()
+    {
+        if (_inspection is null || _signing) return;
+
+        if (_signaturePad is null)
+        {
+            Snackbar.Add("Podpisové plátno není připravené.", Severity.Error);
+            return;
+        }
+
+        if (await _signaturePad.IsEmptyAsync())
+        {
+            Snackbar.Add("Podpis je prázdný — podepiš se prosím.", Severity.Warning);
+            return;
+        }
+
+        var signatureBase64 = await _signaturePad.GetPngBase64Async();
+        if (string.IsNullOrEmpty(signatureBase64))
+        {
+            Snackbar.Add("Nepodařilo se získat podpis z plátna.", Severity.Error);
+            return;
+        }
+
+        _signing = true;
+        try
+        {
+            var response = await InspectionsClient.SignAsync(_inspection.Id,
+                new SignInspectionRequest(signatureBase64));
+            _inspection = response.Inspection;
+            _downloadUrl = response.DownloadUrl;
+            _isReadOnly = true;
+            _showSignSection = false;
+            Snackbar.Add("Revize podepsána a uložena.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Podpis selhal: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _signing = false;
+        }
+    }
+
+    private List<string> ComputeMissingRequiredFields()
+    {
+        var missing = new List<string>();
+        if (_schema is null) return missing;
+
+        foreach (var sec in _schema.Sections)
+        {
+            if (_excludedSections.Contains(sec.Id)) continue;
+            foreach (var field in sec.Fields)
+            {
+                if (!field.Required) continue;
+                if (field.Type is InspectionFieldTypes.Photo or InspectionFieldTypes.Signature) continue;
+                if (!_formModel.TryGetValue(field.Id, out var value) || value is null
+                    || value.Value.ValueKind == JsonValueKind.Null
+                    || (value.Value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.Value.GetString())))
+                {
+                    missing.Add(field.Label);
+                }
+            }
+        }
+
+        if (_nextDueAt is null) missing.Add("Termín další revize");
+        return missing;
+    }
 
     public void Dispose()
     {
