@@ -4,16 +4,18 @@
 
 FROM alpine:3.19
 
-ARG MC_VERSION=RELEASE.2024-12-13T22-19-12Z
-
+# MinIO mc client — používáme latest stable. Pro reproducibility zafixuj hash
+# nebo konkrétní release-date až MinIO publikuje v archive/ adresáři
+# (URLkou archive/mc.RELEASE.{date}, ale staré releases jsou postupně mazané).
 RUN apk add --no-cache \
         postgresql16-client \
         ca-certificates \
         bash \
         curl \
         tzdata \
-    && curl -fsSL "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.${MC_VERSION}" -o /usr/local/bin/mc \
-    && chmod +x /usr/local/bin/mc
+    && curl -fsSL "https://dl.min.io/client/mc/release/linux-amd64/mc" -o /usr/local/bin/mc \
+    && chmod +x /usr/local/bin/mc \
+    && mc --version | head -1
 
 ENV TZ=Europe/Prague \
     BACKUP_RETENTION_DAYS=14
