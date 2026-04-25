@@ -4,7 +4,6 @@ using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
-using Microsoft.EntityFrameworkCore;
 using AzKotle.Infrastructure.External;
 using AzKotle.Infrastructure.Inspections;
 using AzKotle.Infrastructure.Pdf;
@@ -12,12 +11,31 @@ using AzKotle.Infrastructure.QrCodes;
 using AzKotle.Infrastructure.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Prometheus;
 using QuestPDF.Infrastructure;
+using Serilog;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((ctx, sp, cfg) =>
+{
+    cfg.ReadFrom.Configuration(ctx.Configuration)
+       .ReadFrom.Services(sp)
+       .Enrich.FromLogContext()
+       .Enrich.WithProperty("Application", "AzKotle.Api")
+       .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
+       .WriteTo.Console();
+
+    var seqUrl = ctx.Configuration["Serilog:Seq:ServerUrl"];
+    if (!string.IsNullOrWhiteSpace(seqUrl))
+    {
+        cfg.WriteTo.Seq(seqUrl, apiKey: ctx.Configuration["Serilog:Seq:ApiKey"]);
+    }
+});
 
 builder.Services.AddOpenApi();
 
@@ -111,6 +129,23 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.Use(async (ctx, next) =>
+{
+    var correlationId = ctx.Request.Headers["X-Correlation-ID"].FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 64)
+    {
+        correlationId = Guid.NewGuid().ToString("N")[..16];
+    }
+    ctx.Response.Headers["X-Correlation-ID"] = correlationId;
+    using (Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId))
+    {
+        await next();
+    }
+});
+
+app.UseSerilogRequestLogging();
+app.UseHttpMetrics();
+
 app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
@@ -150,6 +185,8 @@ app.MapLocationEndpoints();
 app.MapBoilerEndpoints();
 app.MapQrCodeEndpoints();
 app.MapInspectionEndpoints();
+
+app.MapMetrics(); // /metrics — chráněno Caddy ACL (jen z VPS internal IP nebo blocked navenek).
 
 app.Run();
 

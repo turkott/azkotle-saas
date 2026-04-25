@@ -9,6 +9,13 @@ name: azkotle-prod
 #
 # Spuštění:  docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d
 # Update:    docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod pull && docker compose ... up -d
+#
+# Observability (volitelné, neaktivní defaultně):
+# - Logs: api/app posílají do Seq (http://seq:80) přes Serilog. Otevři v UI:
+#   ssh tunelem `ssh -L 8081:localhost:80 root@vps` → http://localhost:8081
+# - Metrics: api/app vystavují /metrics (prometheus-net), Caddy je blokuje
+#   navenek. Pro scrape přidej prometheus + grafana sidecary, viz
+#   deploy/grafana/dashboards/overview.json (skeleton dashboard).
 
 services:
   postgres:
@@ -78,6 +85,8 @@ services:
       Storage__ForcePathStyle: "true"
       Cors__AllowedOrigins__0: "https://app.az-kotle.cz"
       Cors__AllowedOrigins__1: "https://az-kotle.cz"
+      Serilog__Seq__ServerUrl: "http://seq:80"
+      Serilog__Seq__ApiKey: ${SEQ_API_KEY:-}
     networks: [internal]
 
   app:
@@ -88,6 +97,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Api__BaseAddress: "https://api.az-kotle.cz"
+      Serilog__Seq__ServerUrl: "http://seq:80"
+      Serilog__Seq__ApiKey: ${SEQ_API_KEY:-}
     networks: [internal]
 
   caddy:

@@ -13,6 +13,14 @@
 app.az-kotle.cz {
     encode zstd gzip
 
+    # /metrics is internal-only — block from public.
+    @metrics path /metrics
+    handle @metrics {
+        respond "Forbidden" 403 {
+            close
+        }
+    }
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
@@ -31,6 +39,14 @@ app.az-kotle.cz {
 # --- API ---
 api.az-kotle.cz {
     encode zstd gzip
+
+    # /metrics is internal-only — block from public (Prometheus scrape via internal network).
+    @metrics path /metrics
+    handle @metrics {
+        respond "Forbidden" 403 {
+            close
+        }
+    }
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
