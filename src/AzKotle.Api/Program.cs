@@ -5,8 +5,10 @@ using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
 using AzKotle.Infrastructure.External;
+using AzKotle.Infrastructure.Inspections;
 using AzKotle.Infrastructure.Pdf;
 using AzKotle.Infrastructure.QrCodes;
+using AzKotle.Infrastructure.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -33,6 +35,10 @@ builder.Services.AddSingleton<IQrCodeImageRenderer, QrCoderImageRenderer>();
 builder.Services.AddSingleton<IBoilerLabelPdfRenderer, BoilerLabelPdfRenderer>();
 builder.Services.AddSingleton<IInspectionReportPdfRenderer, InspectionReportPdfRenderer>();
 builder.Services.AddScoped<InspectionReportBuilder>();
+
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
+builder.Services.AddSingleton<IFileStorage, S3FileStorage>();
+builder.Services.AddScoped<InspectionSignService>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {

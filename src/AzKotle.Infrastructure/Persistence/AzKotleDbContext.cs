@@ -1,3 +1,4 @@
+using AzKotle.Domain.Entities.Audit;
 using AzKotle.Domain.Entities.Auth;
 using AzKotle.Domain.Entities.Boilers;
 using AzKotle.Domain.Entities.Customers;
@@ -28,6 +29,8 @@ public sealed class AzKotleDbContext : DbContext
     public DbSet<Boiler> Boilers => Set<Boiler>();
 
     public DbSet<Inspection> Inspections => Set<Inspection>();
+
+    public DbSet<AuditLog> AuditLog => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

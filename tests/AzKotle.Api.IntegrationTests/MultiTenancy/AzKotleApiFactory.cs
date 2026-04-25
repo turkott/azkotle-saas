@@ -3,11 +3,15 @@ using AzKotle.Domain.Common;
 using AzKotle.Domain.Entities.Tenants;
 using AzKotle.Domain.Entities.Users;
 using AzKotle.Infrastructure.Persistence;
+using AzKotle.Infrastructure.Storage;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
+using Testcontainers.Minio;
 using Testcontainers.PostgreSql;
 
 namespace AzKotle.Api.IntegrationTests.MultiTenancy;
@@ -27,8 +31,21 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
         .WithPassword("postgres")
         .Build();
 
+    private readonly MinioContainer _minio = new MinioBuilder()
+        .WithImage("minio/minio:RELEASE.2024-12-13T22-19-12Z")
+        .WithUsername("minioadmin")
+        .WithPassword("minioadmin")
+        .Build();
+
     private string _adminConnectionString = string.Empty;
     private string _appConnectionString = string.Empty;
+    private S3FileStorage? _testStorage;
+    private StorageOptions _testStorageOptions = new();
+
+    public string MinioBucket => "azkotle-test";
+
+    public IFileStorage TestStorage => _testStorage
+        ?? throw new InvalidOperationException("Storage není inicializované — InitializeAsync ještě neproběhlo.");
 
     public TenantId TenantAId { get; private set; }
 
@@ -44,8 +61,20 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await Task.WhenAll(_postgres.StartAsync(), _minio.StartAsync());
         _adminConnectionString = _postgres.GetConnectionString();
+
+        _testStorageOptions = new StorageOptions
+        {
+            Bucket = MinioBucket,
+            ServiceUrl = $"http://{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}",
+            Region = "us-east-1",
+            AccessKey = "minioadmin",
+            SecretKey = "minioadmin",
+            ForcePathStyle = true,
+        };
+        _testStorage = new S3FileStorage(Options.Create(_testStorageOptions), NullLogger<S3FileStorage>.Instance);
+        await _testStorage.EnsureBucketExistsAsync();
 
         var adminBuilder = new NpgsqlConnectionStringBuilder(_adminConnectionString);
         var appBuilder = new NpgsqlConnectionStringBuilder(_adminConnectionString)
@@ -92,7 +121,11 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
         _ = Services;
     }
 
-    public new Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
+    public new async Task DisposeAsync()
+    {
+        _testStorage?.Dispose();
+        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _minio.DisposeAsync().AsTask());
+    }
 
     public string IssueJwt(TenantId tenantId, UserId userId, string email, UserRole role)
     {
@@ -115,6 +148,12 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.UseSetting("Jwt:Secret", TestJwtSecret);
         builder.UseSetting("Jwt:Issuer", "azkotle-test");
         builder.UseSetting("Jwt:Audience", "azkotle-api-test");
+        builder.UseSetting("Storage:Bucket", _testStorageOptions.Bucket);
+        builder.UseSetting("Storage:ServiceUrl", _testStorageOptions.ServiceUrl);
+        builder.UseSetting("Storage:Region", _testStorageOptions.Region);
+        builder.UseSetting("Storage:AccessKey", _testStorageOptions.AccessKey);
+        builder.UseSetting("Storage:SecretKey", _testStorageOptions.SecretKey);
+        builder.UseSetting("Storage:ForcePathStyle", "true");
     }
 
     private static async Task Execute(NpgsqlConnection conn, string sql)

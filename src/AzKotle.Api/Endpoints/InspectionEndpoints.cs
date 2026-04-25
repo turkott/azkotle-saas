@@ -4,9 +4,11 @@ using AzKotle.Application.Common;
 using AzKotle.Application.Inspections;
 using AzKotle.Domain.Common;
 using AzKotle.Domain.Entities.Inspections;
+using AzKotle.Infrastructure.Inspections;
 using AzKotle.Infrastructure.Pdf;
 using AzKotle.Infrastructure.Persistence;
 using FluentValidation;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +26,56 @@ public static class InspectionEndpoints
         group.MapPost("/", CreateAsync).WithName("InspectionCreate");
         group.MapPut("/{id:guid}/draft", UpdateDraftAsync).WithName("InspectionUpdateDraft");
         group.MapGet("/{id:guid}/preview.pdf", PreviewPdfAsync).WithName("InspectionPreviewPdf");
+        group.MapPost("/{id:guid}/sign", SignAsync).WithName("InspectionSign");
 
         return routes;
+    }
+
+    private static async Task<IResult> SignAsync(
+        Guid id,
+        [FromBody] SignInspectionRequest? request,
+        InspectionSignService signService,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        if (!TryGetUserId(user, out var actorId))
+        {
+            return Results.Unauthorized();
+        }
+
+        byte[]? signatureBytes = null;
+        if (!string.IsNullOrWhiteSpace(request?.SignatureBase64))
+        {
+            try
+            {
+                signatureBytes = Convert.FromBase64String(request.SignatureBase64);
+            }
+            catch (FormatException)
+            {
+                return Results.BadRequest(new { error = "invalid_input", detail = "SignatureBase64 není platný base64." });
+            }
+        }
+
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        var result = await signService.SignAsync(
+            new InspectionId(id), actorId, ipAddress, userAgent, signatureBytes, ct);
+
+        return result switch
+        {
+            SignInspectionResult.Success ok => Results.Ok(new SignedInspectionResponse(
+                ToDto(ok.Inspection), ok.DownloadUrl, ok.PdfSha256)),
+            SignInspectionResult.NotFound => Results.NotFound(),
+            SignInspectionResult.InvalidState bad => Results.BadRequest(
+                new { error = "invalid_state", detail = bad.Reason }),
+            _ => Results.StatusCode(500),
+        };
     }
 
     private static async Task<IResult> PreviewPdfAsync(
