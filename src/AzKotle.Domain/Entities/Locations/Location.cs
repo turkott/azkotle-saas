@@ -14,8 +14,13 @@ public sealed class Location : DomainEntity
     public string Street { get; private set; } = string.Empty;
     public string City { get; private set; } = string.Empty;
     public string Zip { get; private set; } = string.Empty;
-    public GpsCoordinate? Gps { get; private set; }
+    public decimal? GpsLatitude { get; private set; }
+    public decimal? GpsLongitude { get; private set; }
     public string? Notes { get; private set; }
+
+    public GpsCoordinate? Gps => GpsLatitude.HasValue && GpsLongitude.HasValue
+        ? new GpsCoordinate(GpsLatitude.Value, GpsLongitude.Value)
+        : null;
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
@@ -70,13 +75,16 @@ public sealed class Location : DomainEntity
 
     public void SetGps(decimal latitude, decimal longitude, TimeProvider? timeProvider = null)
     {
-        Gps = new GpsCoordinate(latitude, longitude);
+        var coord = new GpsCoordinate(latitude, longitude);
+        GpsLatitude = coord.Latitude;
+        GpsLongitude = coord.Longitude;
         Touch(timeProvider);
     }
 
     public void ClearGps(TimeProvider? timeProvider = null)
     {
-        Gps = null;
+        GpsLatitude = null;
+        GpsLongitude = null;
         Touch(timeProvider);
     }
 

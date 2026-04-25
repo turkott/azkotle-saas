@@ -1,0 +1,87 @@
+{
+  "$schema": "https://az-kotle.cz/schemas/inspection-form/v1.json",
+  "id": "nv191_2022",
+  "version": "1.0.0",
+  "title": "Roční prohlídka spotřebiče (NV 191/2022 Sb.)",
+  "description": "Formulář pro roční kontrolu plynového spotřebiče dle nařízení vlády č. 191/2022 Sb.",
+  "sections": [
+    {
+      "id": "general",
+      "title": "Obecné údaje",
+      "fields": [
+        { "id": "weather", "label": "Počasí", "type": "select", "options": ["Slunečno", "Zataženo", "Déšť", "Mráz"] },
+        { "id": "ambient_temp_c", "label": "Teplota okolí (°C)", "type": "number", "min": -30, "max": 50, "step": 0.5 },
+        { "id": "operator_present", "label": "Provozovatel přítomen", "type": "boolean" }
+      ]
+    },
+    {
+      "id": "fuel_supply",
+      "title": "Přívod paliva",
+      "fields": [
+        { "id": "gas_meter_reading_m3", "label": "Stav plynoměru (m³)", "type": "number", "min": 0 },
+        { "id": "main_valve_accessible", "label": "Hlavní uzávěr přístupný", "type": "boolean", "required": true },
+        { "id": "main_valve_marked", "label": "Hlavní uzávěr označen", "type": "boolean", "required": true },
+        { "id": "supply_pipe_corrosion", "label": "Koroze přívodního potrubí", "type": "select", "options": ["Žádná", "Povrchová", "Hluboká"], "required": true }
+      ]
+    },
+    {
+      "id": "combustion_chamber",
+      "title": "Spalovací prostor",
+      "fields": [
+        { "id": "burner_condition", "label": "Stav hořáku", "type": "select", "options": ["Vyhovující", "Znečištěný", "Poškozený"], "required": true },
+        { "id": "ignition_electrode_ok", "label": "Zapalovací elektroda v pořádku", "type": "boolean", "required": true },
+        { "id": "flame_color", "label": "Barva plamene", "type": "select", "options": ["Modrý ostrý", "Modro-žlutý", "Žlutý"], "required": true },
+        { "id": "chamber_pressure_mbar", "label": "Tlak v hořáku (mbar)", "type": "number", "step": 0.1, "min": 0, "required": true }
+      ]
+    },
+    {
+      "id": "flue_system",
+      "title": "Spalinová cesta",
+      "fields": [
+        { "id": "flue_drag_pa", "label": "Tah komínu (Pa)", "type": "number", "step": 0.1, "required": true },
+        { "id": "flue_visual_ok", "label": "Vizuální kontrola spalinové cesty OK", "type": "boolean", "required": true },
+        { "id": "co_ppm", "label": "CO ve spalinách (ppm)", "type": "number", "min": 0, "max": 10000, "required": true },
+        { "id": "co2_pct", "label": "CO₂ ve spalinách (%)", "type": "number", "step": 0.1, "min": 0, "max": 30 },
+        { "id": "co_air_free_ppm", "label": "CO bezvzd. (ppm)", "type": "number", "min": 0 }
+      ]
+    },
+    {
+      "id": "safety_devices",
+      "title": "Pojistné zařízení",
+      "fields": [
+        { "id": "ionization_test_pass", "label": "Ionizační kontrola plamene OK", "type": "boolean", "required": true },
+        { "id": "thermostat_test_pass", "label": "Funkční zkouška termostatu", "type": "boolean", "required": true },
+        { "id": "pressure_relief_test_pass", "label": "Pojistný ventil OK", "type": "boolean", "required": true }
+      ]
+    },
+    {
+      "id": "ventilation",
+      "title": "Větrání prostoru",
+      "fields": [
+        { "id": "fresh_air_intake_ok", "label": "Přívod vzduchu volný", "type": "boolean", "required": true },
+        { "id": "exhaust_path_clear", "label": "Odvod spalin průchozí", "type": "boolean", "required": true },
+        { "id": "co_detector_present", "label": "Detektor CO instalován", "type": "boolean" }
+      ]
+    },
+    {
+      "id": "photos",
+      "title": "Fotografie (volitelné)",
+      "fields": [
+        { "id": "photo_main_valve", "label": "Foto hlavního uzávěru", "type": "photo" },
+        { "id": "photo_burner", "label": "Foto hořáku", "type": "photo" },
+        { "id": "photo_flue", "label": "Foto spalinové cesty", "type": "photo" }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "Závěr",
+      "fields": [
+        { "id": "result", "label": "Výsledek prohlídky", "type": "select", "options": ["Vyhovuje", "Vyhovuje s výhradami", "Nevyhovuje"], "required": true },
+        { "id": "findings", "label": "Závady", "type": "textarea" },
+        { "id": "recommendations", "label": "Doporučení", "type": "textarea" },
+        { "id": "next_due_at", "label": "Termín další revize", "type": "date", "required": true },
+        { "id": "technician_signature", "label": "Podpis technika", "type": "signature", "required": true }
+      ]
+    }
+  ]
+}

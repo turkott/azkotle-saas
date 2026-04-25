@@ -1,6 +1,7 @@
 using AzKotle.Domain.Entities.Auth;
 using AzKotle.Domain.Entities.Boilers;
 using AzKotle.Domain.Entities.Customers;
+using AzKotle.Domain.Entities.Inspections;
 using AzKotle.Domain.Entities.Locations;
 using AzKotle.Domain.Entities.Tenants;
 using AzKotle.Domain.Entities.Users;
@@ -25,6 +26,8 @@ public sealed class AzKotleDbContext : DbContext
     public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Boiler> Boilers => Set<Boiler>();
+
+    public DbSet<Inspection> Inspections => Set<Inspection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

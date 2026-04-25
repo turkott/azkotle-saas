@@ -151,10 +151,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 ## FÁZE 3 — Revizní zpráva a PDF (týdny 6–8)
 
 ### TASK 3.1 — Inspection form engine
-- [ ] Šablona jako JSON schema (`docs/templates/nv191_2022.json`).
-- [ ] Blazor `<DynamicForm Schema="..." Model="..." />`.
-- [ ] Fields: text, číslo, select, boolean, date, textarea, photo upload, signature pad.
-- [ ] Autosave (debounce 5s) do `inspections.form_data` status `draft`.
+- [x] Šablona jako JSON schema ([docs/templates/nv191_2022.json](templates/nv191_2022.json)) — 8 sekcí (obecné, palivo, hořák, spalinová cesta, pojistné zařízení, větrání, fotky, závěr) s typovanými poli (number/select/boolean/date/textarea/photo/signature).
+- [x] Domain: `Inspection` aggregate (`Draft`/`Sign`/`Archive` invariants), `InspectionType` (annual_nv191, tpg704_01_service, emergency), `InspectionStatus` (Draft/Signed/Archived). Domain events `InspectionDrafted` + `InspectionSigned`.
+- [x] EF konfigurace + migrace `AddInspections` s FORCE RLS, jsonb pro `form_data`, bytea pro signature.
+- [x] API endpointy `/api/v1/inspections` — list (filter `boilerId`/`status`, cursor pagination), get, POST create draft, PUT `{id}/draft` update form/findings/recommendations.
+- [x] FluentValidation validatory s českými hláškami.
+- [x] Domain unit testy (9) + integrační testy (5: happy path, future date 400, missing boiler 404, cross-tenant 404, list filter).
+- [ ] ~~Blazor DynamicForm~~ — odloženo do TASK 3.4 (sign flow UI). Engine je připravený přes JSON schema, Blazor renderer přijde s podpisem.
+- [ ] ~~Autosave debounce 5s~~ — odloženo s DynamicForm.
 
 ### TASK 3.2 — PDF generator (QuestPDF)
 - [ ] `Infrastructure/Pdf/InspectionReportPdf.cs`.

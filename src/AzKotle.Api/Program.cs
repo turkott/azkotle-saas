@@ -123,6 +123,7 @@ app.MapCustomerEndpoints();
 app.MapLocationEndpoints();
 app.MapBoilerEndpoints();
 app.MapQrCodeEndpoints();
+app.MapInspectionEndpoints();
 
 app.Run();
 
