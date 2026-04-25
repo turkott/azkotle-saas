@@ -24,6 +24,8 @@
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />
     <PackageReference Include="QRCoder" />
     <PackageReference Include="QuestPDF" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="Polly" />
   </ItemGroup>
 
 </Project>

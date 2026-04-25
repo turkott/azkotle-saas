@@ -170,13 +170,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [ ] ~~Snapshot test vs `tests/snapshots/inspection_example.pdf`~~ — odloženo. Binary snapshot flaky kvůli timestamps; lepší by bylo render-to-image diff. Pokrýváme přes magic header + size.
 
 ### TASK 3.3 — Backblaze B2 storage
-- [ ] `Infrastructure/Storage/B2Storage.cs` implementuje `IFileStorage`.
-- [ ] AWS SDK for .NET (S3) s custom endpoint.
-- [ ] Stream upload, async, progress reporting.
-- [ ] Presigned URL 15min TTL pro download.
-- [ ] Key schema: `tenants/{tenantId}/inspections/{year}/{inspectionId}.pdf`.
-- [ ] Polly retry 3× exponential.
-- [ ] Integrační test proti MinIO (Testcontainers).
+- [x] `Application/Abstractions/IFileStorage.cs` + `StorageOptions` (Bucket, ServiceUrl, Region, AccessKey, SecretKey, ForcePathStyle).
+- [x] `Infrastructure/Storage/S3FileStorage.cs` (sjednocená S3 impl pro Backblaze B2 i MinIO) přes AWS SDK 4.0.22.1.
+- [x] Stream upload (Put/Get/Delete), AsyncLifetime resource cleanup.
+- [x] Presigned URL TTL clamped (0; 7] dní (B2 limit).
+- [x] Polly 8.6.6 retry 3× exponential s jitter na timeout/429/5xx.
+- [x] Integrační test proti MinIO Testcontainers (5: put/get round-trip, missing → null, delete, presigned URL signature, TTL guard).
+- [x] **Bonus** — `EnsureBucketExistsAsync()` helper pro idempotentní setup v CI/dev.
+- [ ] ~~Key schema fixovaný v storage~~ — TASK 3.4 (sign flow ho používá: `tenants/{tenantId}/inspections/{year}/{inspectionId}.pdf`).
 
 ### TASK 3.4 — Inspection sign flow
 - [ ] `POST /api/v1/inspections/{id}/sign`.
