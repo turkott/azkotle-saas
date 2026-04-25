@@ -191,10 +191,15 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [ ] ~~Email odesílání + queue~~ — odloženo (vědomý skip pro MVP).
 - [ ] ~~Background worker (Hangfire/Quartz)~~ — odloženo (synchronní pipeline < 3 s je pro MVP OK; přijde s emailem nebo ve Fázi 4).
 
-#### 3.4b — Blazor DynamicForm + autosave (čeká)
-- [ ] `<DynamicForm Schema Model />` renderer pro `nv191_2022.json` (MudBlazor pole dle typu: number/select/boolean/date/textarea/photo/signature).
-- [ ] Stránka `/inspections/{id}` pro vyplňování draftu.
-- [ ] Autosave debounce 5 s → PUT `/draft`.
+#### 3.4b — Blazor DynamicForm + autosave (hotovo)
+- [x] `<DynamicForm Schema Model OnChanged Disabled ExcludedSectionIds />` renderer pro `nv191_2022.json` — MudNumericField, MudSelect, MudCheckBox tri-state, MudTextField textarea, MudDatePicker.
+- [x] Photo + signature jsou stub (placeholder MudAlert) — přijdou v 3.4c / další iteraci.
+- [x] Stránka `/inspections/{id}` (InspectionEdit.razor): načte draft + schema + boiler kontext, render formuláře, `summary` sekce skipnutá (Findings/Recommendations/NextDueAt jako separátní MudTextField/MudDatePicker mapované na entity columns).
+- [x] Autosave debounce 5 s (Task.Delay + CancellationTokenSource) + sticky save indikátor (Saved/Dirty/Saving/Error) + manuální „Uložit teď".
+- [x] Read-only mode pro `Status != Draft` (zákaz editu, info banner, zobrazí signed_at + SHA-256).
+- [x] Vstup z `/boilers/{id}` — tlačítko „Nová revize NV 191" → `POST /api/v1/inspections` → naviguje na `/inspections/{id}`. Smazán legacy `InspectionDialog` modal (per CLAUDE.md feedback „bez modálních oken").
+- [x] InspectionsApiClient + InspectionSchemaClient v `Web.Client/Api/` + DI.
+- [ ] ~~bUnit testy~~ — repo nemá bUnit, ručně otestovat v browseru.
 
 #### 3.4c — UI „Podepsat a odeslat" (čeká)
 - [ ] Tlačítko volá `POST /sign`, loading state.
