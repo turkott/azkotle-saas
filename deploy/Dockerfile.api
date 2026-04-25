@@ -12,7 +12,7 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-${ALPINE_VARIANT} AS build
 WORKDIR /src
 
 # Restore: copy only projects + props files first for better layer caching.
-COPY Directory.Packages.props Directory.Build.props NuGet.config* ./
+COPY Directory.Packages.props Directory.Build.targets ./
 COPY src/AzKotle.Domain/AzKotle.Domain.csproj         src/AzKotle.Domain/
 COPY src/AzKotle.Application/AzKotle.Application.csproj src/AzKotle.Application/
 COPY src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj src/AzKotle.Infrastructure/
