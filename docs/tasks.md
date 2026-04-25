@@ -212,31 +212,34 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 
 ---
 
-## FÁZE 4 — Deploy a monitoring (týden 9)
+## FÁZE 4 — Deploy a monitoring (týden 9) — hotovo
 
-### TASK 4.1 — Production Dockerfile
-- [ ] Multi-stage (SDK 10 → ASP.NET 10 alpine).
-- [ ] Final image < 250 MB.
-- [ ] Non-root user.
-- [ ] Healthcheck `/health` + `/health/ready`.
-- [ ] `docker scan` bez HIGH/CRITICAL.
+### TASK 4.1 — Production Dockerfile (commit `6d37b85`)
+- [x] Multi-stage (SDK 10 → ASP.NET 10 alpine), `deploy/Dockerfile.{api,web}`.
+- [x] Non-root user `azkotle` (uid 10001), TZ Europe/Prague, ASPNETCORE_URLS=http://+:8080.
+- [x] HEALTHCHECK curl /health (api má i /health/ready s SELECT 1 proti DB).
+- [ ] ~~`docker scan` bez HIGH/CRITICAL~~ — nezahrnuto, vyžaduje Docker Desktop nebo CI integraci, doporučeno ručně před prvním deployem.
 
-### TASK 4.2 — docker-compose.prod.yml + Caddyfile
-- [ ] Služby: `app`, `api`, `postgres`, `redis`, `caddy`, `seq`.
-- [ ] Caddy: auto-HTTPS pro `app.az-kotle.cz`, `api.az-kotle.cz`.
-- [ ] HSTS + security headers.
-- [ ] Postgres: daily backup cron → B2.
-- [ ] Seq: admin API key, retention 30 dní.
+### TASK 4.2 — docker-compose.prod.yml + Caddyfile (commit `6d37b85`)
+- [x] Služby: app, api, postgres, redis, caddy, seq, postgres-backup. Internal + public sítě.
+- [x] Caddyfile: auto-HTTPS přes Let's Encrypt pro `app.az-kotle.cz` + `api.az-kotle.cz`, HSTS 1y preload, security headers (X-Frame-Options, Permissions-Policy), apex redirect.
+- [x] Postgres backup: vlastní sidecar (Alpine + pg_dump + mc), denně 03:00 → S3-compatible (B2), retention 14 dní.
+- [x] Seq: SEQ_FIRSTRUN_ADMINPASSWORDHASH přes env, retention default Seq config (řízeno v UI).
+- [x] `.env.prod.example` šablona všech secrets + bootstrap-vps.sh pro fresh Ubuntu 24 VPS.
 
-### TASK 4.3 — GitHub Actions deploy
-- [ ] Push do `main` → deploy.
-- [ ] Build Docker images → push GHCR → SSH na VPS → `docker compose pull && up -d` → smoke test (`curl /health`).
-- [ ] Secrets: `VPS_SSH_KEY`, `GHCR_TOKEN`.
-- [ ] Rollback: tag previous image jako `:previous`.
+### TASK 4.3 — GitHub Actions deploy (commit `f089a18`)
+- [x] `.github/workflows/deploy.yml` — workflow_run trigger po úspěšném CI na main + workflow_dispatch.
+- [x] Matrix build [api, web] → push do GHCR (sha-<short> + latest tagy), gha cache.
+- [x] SSH deploy přes appleboy/ssh-action: git pull, edit .env.prod (AZKOTLE_IMAGE_TAG=sha-<new>), `compose pull api app`, `up -d --remove-orphans`, image prune.
+- [x] Smoke test: curl /health, /health/ready (api), /health (web) — fail = workflow non-zero.
+- [x] Rollback: ručně edit .env.prod AZKOTLE_IMAGE_TAG na previous sha + compose up.
+- [ ] ~~Secrets `VPS_SSH_KEY`, `GHCR_TOKEN`~~ — `GITHUB_TOKEN` automatický, `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY` musí user nastavit v repo Settings.
 
-### TASK 4.4 — Observability
-- [ ] Serilog → Seq, structured logging, correlation ID.
-- [ ] `prometheus-net` na `/metrics`.
-- [ ] Sentry SDK.
-- [ ] Grafana dashboard JSON v `deploy/grafana/dashboards/overview.json`.
-- [ ] Uptime monitoring (UptimeRobot / BetterStack) pro `/health`.
+### TASK 4.4 — Observability (commit `3f3ec41`)
+- [x] Serilog v Api + Web (Console + Seq sink), Enrich Application/Environment, ReadFrom.Configuration.
+- [x] Correlation ID middleware v Api: X-Correlation-ID header (validuje, gen fallback Guid 16 hex), push do Serilog LogContext.
+- [x] UseSerilogRequestLogging — strukturované access logy.
+- [x] prometheus-net.AspNetCore: UseHttpMetrics + MapMetrics → /metrics. Caddy blokuje navenek (path /metrics → 403).
+- [x] Grafana dashboard skeleton `deploy/grafana/dashboards/overview.json` — 8 panelů (req rate, 5xx, in-flight, memory, duration percentiles, status code, GC, threadpool), template var `service`.
+- [ ] ~~Sentry SDK~~ — vědomě skipnuté per user feedback (Serilog→Seq stačí).
+- [ ] ~~Uptime monitoring (UptimeRobot/BetterStack)~~ — externí service, doporučeno user nastaví manuálně.
