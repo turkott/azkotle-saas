@@ -1,0 +1,143 @@
+@page "/boilers"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Boilers
+@using AzKotle.Application.Customers
+@using AzKotle.Application.Locations
+@using AzKotle.Domain.Entities.Boilers
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Authorization
+@inject CustomersApiClient CustomersClient
+@inject LocationsApiClient LocationsClient
+@inject BoilersApiClient BoilersClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Kotle · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Kotle</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search"
+                          @bind-Value:after="LoadAsync"
+                          Placeholder="Hledat (QR/výrobce/SN)…"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined"
+                          DebounceInterval="400"
+                          Margin="Margin.Dense"
+                          Class="mr-3"
+                          Style="min-width: 280px;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       Href="/boilers/new">Nový kotel</MudButton>
+        </MudStack>
+
+        <MudDataGrid T="BoilerDto" Items="_boilers" Loading="_loading" Dense Hover Class="mud-elevation-1"
+                     RowClick="OnRowClick" Filterable="false">
+            <Columns>
+                <PropertyColumn Property="x => x.QrCode" Title="QR kód" />
+                <TemplateColumn Title="Výrobce / Model">
+                    <CellTemplate Context="row">@row.Item.Manufacturer @row.Item.Model</CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="x => x.SerialNo" Title="S/N" />
+                <TemplateColumn Title="Výkon">
+                    <CellTemplate Context="row">@row.Item.OutputKw.ToString("F1") kW</CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="x => x.FuelType" Title="Palivo" />
+                <TemplateColumn Title="Lokalita">
+                    <CellTemplate Context="row">@LocationLabel(row.Item.LocationId)</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Poslední revize">
+                    <CellTemplate Context="row">
+                        @if (row.Item.LastInspectionAt.HasValue)
+                        {
+                            <span>@row.Item.LastInspectionAt.Value.ToString("dd.MM.yyyy")</span>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Další termín">
+                    <CellTemplate Context="row">
+                        @if (row.Item.NextInspectionDue.HasValue)
+                        {
+                            var diff = row.Item.NextInspectionDue.Value.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+                            var color = diff < 0 ? Color.Error : (diff < 30 ? Color.Warning : Color.Success);
+                            <MudChip T="string" Color="@color" Size="Size.Small">@row.Item.NextInspectionDue.Value.ToString("dd.MM.yyyy")</MudChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <NoRecordsContent>
+                <MudText Class="pa-4" Color="Color.Secondary">Žádné kotle. Začni novým záznamem.</MudText>
+            </NoRecordsContent>
+        </MudDataGrid>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<BoilerDto> _boilers = new();
+    private List<LocationDto> _locations = new();
+    private List<CustomerDto> _customers = new();
+    private bool _loading = true;
+    private string? _search;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var boilersTask = BoilersClient.ListAsync(search: _search, pageSize: 200);
+            var locationsTask = LocationsClient.ListAsync(pageSize: 200);
+            var customersTask = CustomersClient.ListAsync(pageSize: 200);
+            await Task.WhenAll(boilersTask, locationsTask, customersTask);
+            _boilers = boilersTask.Result.Items.ToList();
+            _locations = locationsTask.Result.Items.ToList();
+            _customers = customersTask.Result.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načítání: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string LocationLabel(Guid locationId)
+    {
+        var loc = _locations.FirstOrDefault(l => l.Id == locationId);
+        if (loc is null) return "—";
+        var customer = _customers.FirstOrDefault(c => c.Id == loc.CustomerId)?.Name ?? "?";
+        return $"{customer} · {loc.City}, {loc.Street}";
+    }
+
+    private void OnRowClick(DataGridRowClickEventArgs<BoilerDto> args)
+    {
+        Nav.NavigateTo($"/boilers/{args.Item.Id}");
+    }
+}

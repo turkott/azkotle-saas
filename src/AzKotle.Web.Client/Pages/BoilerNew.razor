@@ -1,0 +1,195 @@
+@page "/boilers/new"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Boilers
+@using AzKotle.Application.Customers
+@using AzKotle.Application.Locations
+@using AzKotle.Domain.Entities.Boilers
+@using AzKotle.Domain.Entities.Customers
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Authorization
+@inject CustomersApiClient CustomersClient
+@inject LocationsApiClient LocationsClient
+@inject BoilersApiClient BoilersClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Nový kotel · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudPaper Elevation="1" Class="pa-6" Style="max-width: 720px; margin: 0 auto;">
+            <MudText Typo="Typo.h4" Class="mb-4">Nový kotel</MudText>
+
+            <MudStack Spacing="3">
+                <MudAutocomplete T="CustomerDto"
+                                 Label="Zákazník *"
+                                 Value="_selectedCustomer"
+                                 ValueChanged="OnCustomerChanged"
+                                 SearchFunc="SearchCustomers"
+                                 ToStringFunc="@(c => c?.Name ?? string.Empty)"
+                                 ResetValueOnEmptyText
+                                 CoerceText
+                                 Variant="Variant.Outlined"
+                                 Required />
+
+                <MudSelect T="Guid?" @bind-Value="_model.LocationId" Label="Lokalita *"
+                           Variant="Variant.Outlined" Required Disabled="@(_locations.Count == 0)">
+                    @foreach (var loc in _locations)
+                    {
+                        <MudSelectItem Value="@((Guid?)loc.Id)">@($"{loc.Street}, {loc.City} {loc.Zip}")</MudSelectItem>
+                    }
+                </MudSelect>
+                @if (_selectedCustomer is not null && _locations.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense>
+                        Zákazník nemá lokality. <MudLink Href="/locations">Přejít na lokality</MudLink>
+                    </MudAlert>
+                }
+
+                <MudDivider Class="my-2" />
+
+                <MudStack Row Spacing="2">
+                    <MudTextField @bind-Value="_model.Manufacturer" Label="Výrobce" Required Variant="Variant.Outlined" Class="flex-grow-1" />
+                    <MudTextField @bind-Value="_model.Model" Label="Model" Required Variant="Variant.Outlined" Class="flex-grow-1" />
+                </MudStack>
+
+                <MudStack Row Spacing="2">
+                    <MudTextField @bind-Value="_model.SerialNo" Label="Sériové číslo" Required Variant="Variant.Outlined" Class="flex-grow-1" />
+                    <MudNumericField T="decimal" @bind-Value="_model.OutputKw" Label="Výkon (kW)" Variant="Variant.Outlined"
+                                     Min="0.1m" Max="9999.9m" Step="0.5m" Format="F1" Style="width: 160px;" />
+                </MudStack>
+
+                <MudStack Row Spacing="2">
+                    <MudSelect T="FuelType" @bind-Value="_model.FuelType" Label="Palivo" Variant="Variant.Outlined" Class="flex-grow-1">
+                        <MudSelectItem Value="FuelType.NaturalGas">Zemní plyn</MudSelectItem>
+                        <MudSelectItem Value="FuelType.Lpg">LPG</MudSelectItem>
+                    </MudSelect>
+                    <MudDatePicker @bind-Date="_model.InstalledAt" Label="Datum instalace" Variant="Variant.Outlined" Style="width: 200px;" />
+                </MudStack>
+
+                <MudTextField @bind-Value="_model.Notes" Label="Poznámka" Lines="2" Variant="Variant.Outlined" />
+
+                <MudStack Row Spacing="2" Class="mt-4">
+                    <MudButton OnClick="@(() => Nav.NavigateTo("/boilers"))">Zrušit</MudButton>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="Submit">
+                        @if (_busy)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate />
+                        }
+                        else
+                        {
+                            <span>Vytvořit kotel</span>
+                        }
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private CustomerDto? _selectedCustomer;
+    private List<LocationDto> _locations = new();
+    private bool _busy;
+
+    private readonly BoilerNewModel _model = new()
+    {
+        InstalledAt = DateTime.Today,
+        FuelType = FuelType.NaturalGas,
+        OutputKw = 24m,
+    };
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<IEnumerable<CustomerDto>> SearchCustomers(string? search, CancellationToken ct)
+    {
+        var page = await CustomersClient.ListAsync(search: search, pageSize: 30, ct: ct);
+        return page.Items;
+    }
+
+    private async Task OnCustomerChanged(CustomerDto? customer)
+    {
+        _selectedCustomer = customer;
+        _model.LocationId = null;
+        if (customer is null)
+        {
+            _locations = new();
+            return;
+        }
+
+        try
+        {
+            var page = await LocationsClient.ListAsync(customerId: customer.Id, pageSize: 200);
+            _locations = page.Items.ToList();
+            if (_locations.Count == 1)
+            {
+                _model.LocationId = _locations[0].Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načtení lokalit: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task Submit()
+    {
+        if (!_model.LocationId.HasValue)
+        {
+            Snackbar.Add("Vyber lokalitu.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_model.Manufacturer) || string.IsNullOrWhiteSpace(_model.Model)
+            || string.IsNullOrWhiteSpace(_model.SerialNo) || _model.OutputKw <= 0m)
+        {
+            Snackbar.Add("Vyplň všechna povinná pole.", Severity.Warning);
+            return;
+        }
+        if (!_model.InstalledAt.HasValue)
+        {
+            Snackbar.Add("Vyplň datum instalace.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var request = new CreateBoilerRequest(
+                _model.LocationId.Value,
+                _model.Manufacturer,
+                _model.Model,
+                _model.SerialNo,
+                _model.OutputKw,
+                _model.FuelType,
+                DateOnly.FromDateTime(_model.InstalledAt.Value),
+                string.IsNullOrWhiteSpace(_model.Notes) ? null : _model.Notes);
+            var created = await BoilersClient.CreateAsync(request);
+            Snackbar.Add($"Kotel vytvořen ({created.QrCode}).", Severity.Success);
+            Nav.NavigateTo($"/boilers/{created.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Vytvoření selhalo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class BoilerNewModel
+    {
+        public Guid? LocationId { get; set; }
+        public string Manufacturer { get; set; } = string.Empty;
+        public string Model { get; set; } = string.Empty;
+        public string SerialNo { get; set; } = string.Empty;
+        public decimal OutputKw { get; set; }
+        public FuelType FuelType { get; set; }
+        public DateTime? InstalledAt { get; set; }
+        public string? Notes { get; set; }
+    }
+}

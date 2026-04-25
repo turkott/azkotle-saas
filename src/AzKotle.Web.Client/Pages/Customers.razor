@@ -1,0 +1,184 @@
+@page "/customers"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Customers
+@using AzKotle.Domain.Entities.Customers
+@using AzKotle.Web.Client.Api
+@using AzKotle.Web.Client.Auth
+@using Microsoft.AspNetCore.Components.Authorization
+@inject CustomersApiClient CustomersClient
+@inject LookupApiClient LookupClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Zákazníci · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Zákazníci</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search"
+                          @bind-Value:after="OnSearchChanged"
+                          Placeholder="Hledat (jméno/email/IČO)…"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined"
+                          DebounceInterval="400"
+                          Margin="Margin.Dense"
+                          Class="mr-3" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreate">Nový zákazník</MudButton>
+        </MudStack>
+
+        <MudDataGrid T="CustomerDto" Items="_customers" Loading="_loading" Dense Hover Bordered="false"
+                     Class="mud-elevation-1">
+            <Columns>
+                <PropertyColumn Property="x => x.Name" Title="Jméno / Firma" />
+                <PropertyColumn Property="x => x.Type" Title="Typ" />
+                <PropertyColumn Property="x => x.Ico" Title="IČO" />
+                <PropertyColumn Property="x => x.Email" Title="Email" />
+                <PropertyColumn Property="x => x.Phone" Title="Telefon" />
+                <TemplateColumn Title="Vytvořeno">
+                    <CellTemplate Context="row">@row.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Akce" CellStyle="text-align: right;" Sortable="false">
+                    <CellTemplate Context="row">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEdit(row.Item))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => Delete(row.Item))" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <NoRecordsContent>
+                <MudText Class="pa-4" Color="Color.Secondary">Žádní zákazníci. Začni novým záznamem.</MudText>
+            </NoRecordsContent>
+        </MudDataGrid>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<CustomerDto> _customers = new();
+    private bool _loading = true;
+    private string? _search;
+    private CancellationTokenSource? _searchCts;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var page = await CustomersClient.ListAsync(search: _search, pageSize: 200);
+            _customers = page.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načítání: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSearchChanged()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(50, _searchCts.Token);
+            await LoadAsync();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private async Task OpenCreate()
+    {
+        var parameters = new DialogParameters<CustomerDialog>
+        {
+            { x => x.LookupClient, LookupClient },
+        };
+        var dialog = await DialogService.ShowAsync<CustomerDialog>("Nový zákazník", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: CustomerFormData data })
+        {
+            try
+            {
+                await CustomersClient.CreateAsync(new CreateCustomerRequest(
+                    data.Type, data.Name, data.Ico, data.Email, data.Phone, data.Notes));
+                Snackbar.Add("Zákazník vytvořen.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Vytvoření selhalo: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task OpenEdit(CustomerDto customer)
+    {
+        var parameters = new DialogParameters<CustomerDialog>
+        {
+            { x => x.LookupClient, LookupClient },
+            { x => x.Existing, customer },
+        };
+        var dialog = await DialogService.ShowAsync<CustomerDialog>("Upravit zákazníka", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: CustomerFormData data })
+        {
+            try
+            {
+                await CustomersClient.UpdateAsync(customer.Id, new UpdateCustomerRequest(
+                    data.Name, data.Ico, data.Email, data.Phone, data.Notes));
+                Snackbar.Add("Zákazník upraven.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Úprava selhala: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete(CustomerDto customer)
+    {
+        var ok = await DialogService.ShowMessageBoxAsync(
+            "Smazat zákazníka",
+            $"Opravdu smazat {customer.Name}? Lokality a kotle nelze smazat dokud existuje vazba.",
+            yesText: "Smazat", cancelText: "Zrušit");
+        if (ok != true) return;
+
+        try
+        {
+            await CustomersClient.DeleteAsync(customer.Id);
+            Snackbar.Add("Zákazník smazán.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Smazání selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+}

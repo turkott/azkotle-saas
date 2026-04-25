@@ -1,0 +1,369 @@
+@page "/boilers/{Id:guid}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Boilers
+@using AzKotle.Application.Customers
+@using AzKotle.Application.Locations
+@using AzKotle.Domain.Entities.Boilers
+@using AzKotle.Web.Client.Api
+@using AzKotle.Web.Client.Auth
+@using Microsoft.AspNetCore.Components.Authorization
+@inject BoilersApiClient BoilersClient
+@inject LocationsApiClient LocationsClient
+@inject CustomersApiClient CustomersClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject AuthSession AuthSession
+
+<PageTitle>@(_boiler?.QrCode ?? "Kotel") · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate />
+        }
+        else if (_boiler is null)
+        {
+            <MudAlert Severity="Severity.Error">Kotel nenalezen nebo nemáš přístup.</MudAlert>
+            <MudButton Class="mt-4" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/boilers"))">Zpět</MudButton>
+        }
+        else
+        {
+            <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/boilers"))" />
+                <MudText Typo="Typo.h4">@_boiler.QrCode</MudText>
+                <MudSpacer />
+                <MudButton StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Outlined" OnClick="DownloadQrPdf">QR štítek (PDF)</MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="OpenInspection" Class="ml-2">Zaznamenat revizi</MudButton>
+            </MudStack>
+
+            <MudGrid>
+                <MudItem xs="12" md="8">
+                    <MudCard>
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Údaje kotle</MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                @if (!_editMode)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(() => _editMode = true)" />
+                                }
+                            </CardHeaderActions>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            @if (!_editMode)
+                            {
+                                <MudGrid>
+                                    <DataField Label="Výrobce" Value="@_boiler.Manufacturer" />
+                                    <DataField Label="Model" Value="@_boiler.Model" />
+                                    <DataField Label="Sériové číslo" Value="@_boiler.SerialNo" />
+                                    <DataField Label="Výkon" Value="@($"{_boiler.OutputKw:F1} kW")" />
+                                    <DataField Label="Palivo" Value="@(_boiler.FuelType == FuelType.NaturalGas ? "Zemní plyn" : "LPG")" />
+                                    <DataField Label="Datum instalace" Value="@_boiler.InstalledAt.ToString("dd.MM.yyyy")" />
+                                    <DataField Label="Lokalita" Value="@_locationLabel" />
+                                    @if (!string.IsNullOrWhiteSpace(_boiler.Notes))
+                                    {
+                                        <MudItem xs="12">
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Poznámka</MudText>
+                                            <MudText>@_boiler.Notes</MudText>
+                                        </MudItem>
+                                    }
+                                </MudGrid>
+                            }
+                            else
+                            {
+                                <MudStack Spacing="3">
+                                    <MudStack Row Spacing="2">
+                                        <MudTextField @bind-Value="_edit.Manufacturer" Label="Výrobce" Variant="Variant.Outlined" Class="flex-grow-1" />
+                                        <MudTextField @bind-Value="_edit.Model" Label="Model" Variant="Variant.Outlined" Class="flex-grow-1" />
+                                    </MudStack>
+                                    <MudStack Row Spacing="2">
+                                        <MudTextField @bind-Value="_edit.SerialNo" Label="S/N" Variant="Variant.Outlined" Class="flex-grow-1" />
+                                        <MudNumericField T="decimal" @bind-Value="_edit.OutputKw" Label="Výkon (kW)" Variant="Variant.Outlined"
+                                                         Min="0.1m" Max="9999.9m" Step="0.5m" Format="F1" Style="width: 160px;" />
+                                    </MudStack>
+                                    <MudSelect T="FuelType" @bind-Value="_edit.FuelType" Label="Palivo" Variant="Variant.Outlined">
+                                        <MudSelectItem Value="FuelType.NaturalGas">Zemní plyn</MudSelectItem>
+                                        <MudSelectItem Value="FuelType.Lpg">LPG</MudSelectItem>
+                                    </MudSelect>
+                                    <MudTextField @bind-Value="_edit.Notes" Label="Poznámka" Lines="2" Variant="Variant.Outlined" />
+                                    <MudStack Row Spacing="2">
+                                        <MudButton OnClick="CancelEdit">Zrušit</MudButton>
+                                        <MudSpacer />
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveEdit">Uložit změny</MudButton>
+                                    </MudStack>
+                                </MudStack>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudCard Class="mb-4">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Revize</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Poslední revize</MudText>
+                            <MudText Typo="Typo.h6" Class="mb-2">
+                                @(_boiler.LastInspectionAt?.ToString("dd.MM.yyyy") ?? "—")
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Další termín</MudText>
+                            <MudText Typo="Typo.h6" Color="@DueColor()">
+                                @(_boiler.NextInspectionDue?.ToString("dd.MM.yyyy") ?? "—")
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard>
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">QR kód</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent Class="d-flex flex-column align-center">
+                            @if (!string.IsNullOrEmpty(_qrPngDataUri))
+                            {
+                                <img src="@_qrPngDataUri" alt="@_boiler.QrCode" style="width: 200px; height: 200px;" />
+                            }
+                            else
+                            {
+                                <MudProgressCircular Indeterminate />
+                            }
+                            <MudText Typo="Typo.caption" Class="mt-2">@_boiler.QrCode</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudExpansionPanels Elevation="0">
+                        <MudExpansionPanel Text="🔥 Nebezpečná zóna">
+                            <MudStack Row AlignItems="AlignItems.Center">
+                                <MudText>Smazat tento kotel a všechny jeho budoucí revize.</MudText>
+                                <MudSpacer />
+                                <MudButton Variant="Variant.Filled" Color="Color.Error"
+                                           StartIcon="@Icons.Material.Filled.Delete" OnClick="Delete">Smazat</MudButton>
+                            </MudStack>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                </MudItem>
+            </MudGrid>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private BoilerDto? _boiler;
+    private LocationDto? _location;
+    private CustomerDto? _customer;
+    private string _locationLabel = string.Empty;
+    private bool _loading = true;
+    private bool _editMode;
+    private BoilerEditModel _edit = new();
+    private string? _qrPngDataUri;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _boiler = await BoilersClient.GetAsync(Id);
+            if (_boiler is null) return;
+
+            _location = await LocationsClient.GetAsync(_boiler.LocationId);
+            if (_location is not null)
+            {
+                _customer = await CustomersClient.GetAsync(_location.CustomerId);
+                _locationLabel = $"{_customer?.Name ?? "?"} · {_location.Street}, {_location.Zip} {_location.City}";
+            }
+
+            _edit = new BoilerEditModel
+            {
+                Manufacturer = _boiler.Manufacturer,
+                Model = _boiler.Model,
+                SerialNo = _boiler.SerialNo,
+                OutputKw = _boiler.OutputKw,
+                FuelType = _boiler.FuelType,
+                Notes = _boiler.Notes,
+            };
+
+            _ = LoadQrAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načítání: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadQrAsync()
+    {
+        var tokens = await AuthSession.LoadAsync();
+        if (tokens is null) return;
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(BoilersClient.QrPngUrl(Id)) };
+            using var request = new HttpRequestMessage(HttpMethod.Get, BoilersClient.QrPngUrl(Id));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+            using var direct = new HttpClient();
+            using var resp = await direct.SendAsync(request);
+            if (resp.IsSuccessStatusCode)
+            {
+                var bytes = await resp.Content.ReadAsByteArrayAsync();
+                _qrPngDataUri = $"data:image/png;base64,{Convert.ToBase64String(bytes)}";
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+            // Silently swallow — QR rendering is decorative.
+        }
+    }
+
+    private async Task DownloadQrPdf()
+    {
+        var tokens = await AuthSession.LoadAsync();
+        if (tokens is null) return;
+        try
+        {
+            using var direct = new HttpClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, BoilersClient.QrLabelPdfUrl(Id, copies: 4));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+            using var resp = await direct.SendAsync(request);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Stažení PDF selhalo ({(int)resp.StatusCode}).", Severity.Error);
+                return;
+            }
+            var bytes = await resp.Content.ReadAsByteArrayAsync();
+            var dataUri = $"data:application/pdf;base64,{Convert.ToBase64String(bytes)}";
+            Nav.NavigateTo(dataUri, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Stažení PDF selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void CancelEdit()
+    {
+        _editMode = false;
+        if (_boiler is null) return;
+        _edit = new BoilerEditModel
+        {
+            Manufacturer = _boiler.Manufacturer,
+            Model = _boiler.Model,
+            SerialNo = _boiler.SerialNo,
+            OutputKw = _boiler.OutputKw,
+            FuelType = _boiler.FuelType,
+            Notes = _boiler.Notes,
+        };
+    }
+
+    private async Task SaveEdit()
+    {
+        if (_boiler is null) return;
+        try
+        {
+            await BoilersClient.UpdateAsync(_boiler.Id, new UpdateBoilerRequest(
+                _edit.Manufacturer, _edit.Model, _edit.SerialNo, _edit.OutputKw, _edit.FuelType, _edit.Notes));
+            Snackbar.Add("Změny uloženy.", Severity.Success);
+            _editMode = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Uložení selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OpenInspection()
+    {
+        if (_boiler is null) return;
+        var dialog = await DialogService.ShowAsync<InspectionDialog>("Zaznamenat revizi",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: InspectionFormData data })
+        {
+            try
+            {
+                await BoilersClient.RecordInspectionAsync(_boiler.Id, new RecordInspectionRequest(
+                    DateOnly.FromDateTime(data.PerformedAt!.Value),
+                    data.NextDueAt.HasValue ? DateOnly.FromDateTime(data.NextDueAt.Value) : null));
+                Snackbar.Add("Revize zaznamenána.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Záznam selhal: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete()
+    {
+        if (_boiler is null) return;
+        var ok = await DialogService.ShowMessageBoxAsync(
+            "Smazat kotel",
+            $"Opravdu smazat kotel {_boiler.QrCode}? Akce je nevratná.",
+            yesText: "Smazat", cancelText: "Zrušit");
+        if (ok != true) return;
+        try
+        {
+            await BoilersClient.DeleteAsync(_boiler.Id);
+            Snackbar.Add("Kotel smazán.", Severity.Success);
+            Nav.NavigateTo("/boilers");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Smazání selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Color DueColor()
+    {
+        if (_boiler?.NextInspectionDue is not { } due) return Color.Default;
+        var diff = due.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+        if (diff < 0) return Color.Error;
+        if (diff < 30) return Color.Warning;
+        return Color.Success;
+    }
+
+    private sealed class BoilerEditModel
+    {
+        public string Manufacturer { get; set; } = string.Empty;
+        public string Model { get; set; } = string.Empty;
+        public string SerialNo { get; set; } = string.Empty;
+        public decimal OutputKw { get; set; }
+        public FuelType FuelType { get; set; }
+        public string? Notes { get; set; }
+    }
+}

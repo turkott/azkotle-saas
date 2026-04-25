@@ -1,0 +1,189 @@
+@page "/locations"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Customers
+@using AzKotle.Application.Locations
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Authorization
+@inject CustomersApiClient CustomersClient
+@inject LocationsApiClient LocationsClient
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Lokality · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Lokality</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search"
+                          @bind-Value:after="LoadAsync"
+                          Placeholder="Hledat (ulice/město/PSČ)…"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined"
+                          DebounceInterval="400"
+                          Margin="Margin.Dense"
+                          Class="mr-3"
+                          Style="min-width: 280px;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreate">Nová lokalita</MudButton>
+        </MudStack>
+
+        <MudDataGrid T="LocationDto" Items="_locations" Loading="_loading" Dense Hover Class="mud-elevation-1">
+            <Columns>
+                <PropertyColumn Property="x => x.Street" Title="Ulice" />
+                <PropertyColumn Property="x => x.City" Title="Město" />
+                <PropertyColumn Property="x => x.Zip" Title="PSČ" />
+                <TemplateColumn Title="Zákazník">
+                    <CellTemplate Context="row">@CustomerName(row.Item.CustomerId)</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="GPS">
+                    <CellTemplate Context="row">
+                        @if (row.Item.GpsLatitude.HasValue && row.Item.GpsLongitude.HasValue)
+                        {
+                            <MudText Typo="Typo.caption">@row.Item.GpsLatitude.Value.ToString("F4"), @row.Item.GpsLongitude.Value.ToString("F4")</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Akce" CellStyle="text-align: right;" Sortable="false">
+                    <CellTemplate Context="row">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEdit(row.Item))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => Delete(row.Item))" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <NoRecordsContent>
+                <MudText Class="pa-4" Color="Color.Secondary">Žádné lokality. Nejdřív vytvoř zákazníka a přidej mu lokalitu.</MudText>
+            </NoRecordsContent>
+        </MudDataGrid>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<LocationDto> _locations = new();
+    private List<CustomerDto> _customers = new();
+    private bool _loading = true;
+    private string? _search;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var customersTask = CustomersClient.ListAsync(pageSize: 200);
+            var locationsTask = LocationsClient.ListAsync(search: _search, pageSize: 200);
+            await Task.WhenAll(customersTask, locationsTask);
+            _customers = customersTask.Result.Items.ToList();
+            _locations = locationsTask.Result.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načítání: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string CustomerName(Guid customerId) =>
+        _customers.FirstOrDefault(c => c.Id == customerId)?.Name ?? "—";
+
+    private async Task OpenCreate()
+    {
+        if (_customers.Count == 0)
+        {
+            Snackbar.Add("Nejdřív vytvoř zákazníka.", Severity.Warning);
+            return;
+        }
+        var parameters = new DialogParameters<LocationDialog>
+        {
+            { x => x.Customers, _customers },
+        };
+        var dialog = await DialogService.ShowAsync<LocationDialog>("Nová lokalita", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: LocationFormData data } && data.CustomerId.HasValue)
+        {
+            try
+            {
+                await LocationsClient.CreateAsync(new CreateLocationRequest(
+                    data.CustomerId.Value, data.Street, data.City, data.Zip,
+                    data.GpsLatitude, data.GpsLongitude, data.Notes));
+                Snackbar.Add("Lokalita vytvořena.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Vytvoření selhalo: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task OpenEdit(LocationDto location)
+    {
+        var parameters = new DialogParameters<LocationDialog>
+        {
+            { x => x.Customers, _customers },
+            { x => x.Existing, location },
+        };
+        var dialog = await DialogService.ShowAsync<LocationDialog>("Upravit lokalitu", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: LocationFormData data })
+        {
+            try
+            {
+                await LocationsClient.UpdateAsync(location.Id, new UpdateLocationRequest(
+                    data.Street, data.City, data.Zip, data.GpsLatitude, data.GpsLongitude, data.Notes));
+                Snackbar.Add("Lokalita upravena.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Úprava selhala: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete(LocationDto location)
+    {
+        var ok = await DialogService.ShowMessageBoxAsync(
+            "Smazat lokalitu",
+            "Opravdu smazat? Pokud lokalita má kotle, smazání selže.",
+            yesText: "Smazat", cancelText: "Zrušit");
+        if (ok != true) return;
+
+        try
+        {
+            await LocationsClient.DeleteAsync(location.Id);
+            Snackbar.Add("Lokalita smazána.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Smazání selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+}

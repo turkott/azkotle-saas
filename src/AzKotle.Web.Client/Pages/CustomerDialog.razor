@@ -1,0 +1,121 @@
+@using AzKotle.Application.Customers
+@using AzKotle.Domain.Entities.Customers
+@using AzKotle.Web.Client.Auth
+@using Microsoft.AspNetCore.Components.Forms
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit">
+            <DataAnnotationsValidator />
+            <MudStack Spacing="3">
+                <MudSelect T="CustomerType" @bind-Value="_model.Type" Label="Typ" Variant="Variant.Outlined" Required>
+                    <MudSelectItem Value="CustomerType.Person">Fyzická osoba</MudSelectItem>
+                    <MudSelectItem Value="CustomerType.Company">Firma / OSVČ</MudSelectItem>
+                </MudSelect>
+
+                @if (_model.Type == CustomerType.Company)
+                {
+                    <MudStack Row Spacing="2" AlignItems="AlignItems.Start">
+                        <MudTextField @bind-Value="_model.Ico"
+                                      Label="IČO"
+                                      MaxLength="8"
+                                      Variant="Variant.Outlined"
+                                      Class="flex-grow-1" />
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   OnClick="LookupAresAsync"
+                                   Disabled="@(_aresBusy || string.IsNullOrWhiteSpace(_model.Ico))"
+                                   Style="height: 56px; min-width: 140px;">
+                            @if (_aresBusy)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate />
+                            }
+                            else
+                            {
+                                <span>Načíst z ARES</span>
+                            }
+                        </MudButton>
+                    </MudStack>
+                }
+
+                <MudTextField @bind-Value="_model.Name" Label="Jméno / Název firmy"
+                              Required Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Email" Label="Email" InputType="InputType.Email"
+                              Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Phone" Label="Telefon" Variant="Variant.Outlined" />
+
+                <MudTextField @bind-Value="_model.Notes" Label="Poznámka"
+                              Lines="3" Variant="Variant.Outlined" />
+            </MudStack>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Zrušit</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">Uložit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public LookupApiClient LookupClient { get; set; } = default!;
+    [Parameter] public CustomerDto? Existing { get; set; }
+
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private CustomerFormData _model = new();
+    private bool _aresBusy;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new CustomerFormData
+            {
+                Type = Existing.Type,
+                Name = Existing.Name,
+                Ico = Existing.Ico,
+                Email = Existing.Email,
+                Phone = Existing.Phone,
+                Notes = Existing.Notes,
+            };
+        }
+    }
+
+    private async Task LookupAresAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Ico)) return;
+        _aresBusy = true;
+        try
+        {
+            var result = await LookupClient.LookupAresAsync(_model.Ico.Trim());
+            if (result.Succeeded && result.Value is not null)
+            {
+                _model.Name = result.Value.CompanyName;
+                Snackbar.Add($"Načteno z ARES: {result.Value.CompanyName}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "ARES vyhledávání selhalo.",
+                    result.IsNotFound ? Severity.Warning : Severity.Error);
+            }
+        }
+        finally
+        {
+            _aresBusy = false;
+        }
+    }
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Name))
+        {
+            Snackbar.Add("Vyplň jméno.", Severity.Warning);
+            return;
+        }
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

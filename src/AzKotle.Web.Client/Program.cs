@@ -1,3 +1,4 @@
+using AzKotle.Web.Client.Api;
 using AzKotle.Web.Client.Auth;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -26,5 +27,12 @@ builder.Services.AddHttpClient<LookupApiClient>(client =>
 {
     client.BaseAddress = new Uri(apiBaseAddress);
 });
+
+builder.Services.AddHttpClient<CustomersApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<LocationsApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<BoilersApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<JwtAuthHandler>();
 
 await builder.Build().RunAsync();

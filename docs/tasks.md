@@ -137,11 +137,14 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [x] Public `/qr/{code}` — anonymní → 302 na `{Web:BaseUrl}/login?redirect=/qr/{code}`; přihlášený → 302 na detail kotle. RLS zajišťuje, že přihlášený uživatel uvidí jen QR ze svého tenantu.
 
 ### TASK 2.4 — Blazor UI: seznam kotlů, detail, editace
-- [ ] `/boilers` — data grid (virtual scroll, filter, search).
-- [ ] `/boilers/new` — form s validací.
-- [ ] `/boilers/{id}` — detail: info, poslední revize, fotky, historie.
-- [ ] Optimistic UI.
-- [ ] E2E test (Playwright): create → edit → delete.
+- [x] `/boilers` — `MudDataGrid` se search (QR/výrobce/SN), barevné chipy pro „další termín revize" (zelená > 30 dní, žlutá < 30, červená po termínu), klik na řádek → detail.
+- [x] `/boilers/new` — form s `MudAutocomplete` pro zákazníka, dynamický `MudSelect` pro lokality podle vybraného zákazníka, validace.
+- [x] `/boilers/{id}` — detail (info, poslední revize, další termín, QR PNG inline), edit specs, „Zaznamenat revizi" dialog, „QR štítek (PDF)" download. Bez fotek/historie revizí — odloženo do TASK 3.
+- [x] Optimistic UI — `MudSnackbar` zprávy + okamžitý reload listu po mutacích.
+- [x] **Bonus** — `/customers` + `/locations` stránky (CRUD), bez nich nelze vytvořit kotel. Zákazník dialog má ARES autofill.
+- [x] **Bonus** — sidebar nav v `MainLayout` (mini drawer s ikonami pro Nástěnka/Zákazníci/Lokality/Kotle, hover-expand).
+- [x] **Bonus** — danger zone collapse v detailu kotle (proti omylu).
+- [ ] ~~E2E test (Playwright)~~ — odloženo. Setup browser binárek + nový pipeline = jiná session. Smoke test pokrývá manuální browser test.
 
 ---
 

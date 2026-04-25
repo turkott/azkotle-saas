@@ -1,0 +1,89 @@
+@using AzKotle.Application.Customers
+@using AzKotle.Application.Locations
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudSelect T="Guid?" @bind-Value="_model.CustomerId" Label="Zákazník"
+                       Variant="Variant.Outlined" Disabled="@(Existing is not null)" Required>
+                @foreach (var c in Customers)
+                {
+                    <MudSelectItem Value="@((Guid?)c.Id)">@c.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="_model.Street" Label="Ulice" Required Variant="Variant.Outlined" />
+
+            <MudStack Row Spacing="2">
+                <MudTextField @bind-Value="_model.City" Label="Město" Required Variant="Variant.Outlined" Class="flex-grow-1" />
+                <MudTextField @bind-Value="_model.Zip" Label="PSČ" Required Variant="Variant.Outlined" Style="width: 120px;" />
+            </MudStack>
+
+            <MudExpansionPanels Elevation="0">
+                <MudExpansionPanel Text="GPS souřadnice (volitelné)">
+                    <MudStack Row Spacing="2">
+                        <MudNumericField T="decimal?" @bind-Value="_model.GpsLatitude" Label="Šířka" Variant="Variant.Outlined"
+                                         HideSpinButtons Format="F7" Culture="@_invariant" />
+                        <MudNumericField T="decimal?" @bind-Value="_model.GpsLongitude" Label="Délka" Variant="Variant.Outlined"
+                                         HideSpinButtons Format="F7" Culture="@_invariant" />
+                    </MudStack>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            <MudTextField @bind-Value="_model.Notes" Label="Poznámka" Lines="2" Variant="Variant.Outlined" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Zrušit</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">Uložit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public IReadOnlyList<CustomerDto> Customers { get; set; } = Array.Empty<CustomerDto>();
+    [Parameter] public LocationDto? Existing { get; set; }
+
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private LocationFormData _model = new();
+    private static readonly System.Globalization.CultureInfo _invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new LocationFormData
+            {
+                CustomerId = Existing.CustomerId,
+                Street = Existing.Street,
+                City = Existing.City,
+                Zip = Existing.Zip,
+                GpsLatitude = Existing.GpsLatitude,
+                GpsLongitude = Existing.GpsLongitude,
+                Notes = Existing.Notes,
+            };
+        }
+        else if (Customers.Count > 0)
+        {
+            _model.CustomerId = Customers[0].Id;
+        }
+    }
+
+    private void Submit()
+    {
+        if (!_model.CustomerId.HasValue)
+        {
+            Snackbar.Add("Vyber zákazníka.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_model.Street) || string.IsNullOrWhiteSpace(_model.City) || string.IsNullOrWhiteSpace(_model.Zip))
+        {
+            Snackbar.Add("Vyplň ulici, město i PSČ.", Severity.Warning);
+            return;
+        }
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,11 @@
+@inherits ComponentBase
+
+<MudItem xs="12" sm="6">
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@Label</MudText>
+    <MudText Typo="Typo.body1">@Value</MudText>
+</MudItem>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Value { get; set; }
+}
