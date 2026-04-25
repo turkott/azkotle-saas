@@ -5,6 +5,7 @@ using AzKotle.Application.Abstractions;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
 using AzKotle.Infrastructure.External;
+using AzKotle.Infrastructure.Pdf;
 using AzKotle.Infrastructure.QrCodes;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -30,6 +31,8 @@ builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IBoilerQrSlugGenerator, BoilerQrSlugGenerator>();
 builder.Services.AddSingleton<IQrCodeImageRenderer, QrCoderImageRenderer>();
 builder.Services.AddSingleton<IBoilerLabelPdfRenderer, BoilerLabelPdfRenderer>();
+builder.Services.AddSingleton<IInspectionReportPdfRenderer, InspectionReportPdfRenderer>();
+builder.Services.AddScoped<InspectionReportBuilder>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {

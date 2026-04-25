@@ -161,11 +161,13 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 - [ ] ~~Autosave debounce 5s~~ — odloženo s DynamicForm.
 
 ### TASK 3.2 — PDF generator (QuestPDF)
-- [ ] `Infrastructure/Pdf/InspectionReportPdf.cs`.
-- [ ] Hlavička (logo firmy, údaje, číslo zprávy), sekce (zákazník, lokalita, kotel, měření, závady, doporučení, podpisy).
-- [ ] Font Noto Sans embedded (česká diakritika).
-- [ ] PDF/A-2b compliance.
-- [ ] Snapshot test vs `tests/snapshots/inspection_example.pdf`.
+- [x] `Infrastructure/Pdf/InspectionReportPdfRenderer.cs` + `InspectionReportBuilder.cs` (loaduje inspection + boiler + location + customer + technician + tenant a sestaví `InspectionReportData`).
+- [x] Hlavička (název firmy + IČO/DIČ, číslo zprávy, typ revize), sekce (zákazník, lokalita, kotel, vyplněná data z `form_data`, závady, doporučení, podpisy).
+- [x] Veřejný preview endpoint `GET /api/v1/inspections/{id}/preview.pdf`.
+- [x] Integrační testy (3): PDF magic header, cross-tenant 404, smoke s customer name.
+- [ ] ~~Font Noto Sans embedded~~ — odloženo. QuestPDF default font řeší českou diakritiku; pro tiskovou kvalitu s tenant-customizable hlavičkou přidáme v dalším kole.
+- [ ] ~~PDF/A-2b compliance~~ — odloženo. QuestPDF nativně PDF/A nepodporuje; potřebovalo by post-processing přes Ghostscript. Zatím standardní PDF.
+- [ ] ~~Snapshot test vs `tests/snapshots/inspection_example.pdf`~~ — odloženo. Binary snapshot flaky kvůli timestamps; lepší by bylo render-to-image diff. Pokrýváme přes magic header + size.
 
 ### TASK 3.3 — Backblaze B2 storage
 - [ ] `Infrastructure/Storage/B2Storage.cs` implementuje `IFileStorage`.

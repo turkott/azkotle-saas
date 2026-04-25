@@ -4,6 +4,7 @@ using AzKotle.Application.Common;
 using AzKotle.Application.Inspections;
 using AzKotle.Domain.Common;
 using AzKotle.Domain.Entities.Inspections;
+using AzKotle.Infrastructure.Pdf;
 using AzKotle.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
@@ -22,8 +23,22 @@ public static class InspectionEndpoints
         group.MapGet("/{id:guid}", GetAsync).WithName("InspectionById");
         group.MapPost("/", CreateAsync).WithName("InspectionCreate");
         group.MapPut("/{id:guid}/draft", UpdateDraftAsync).WithName("InspectionUpdateDraft");
+        group.MapGet("/{id:guid}/preview.pdf", PreviewPdfAsync).WithName("InspectionPreviewPdf");
 
         return routes;
+    }
+
+    private static async Task<IResult> PreviewPdfAsync(
+        Guid id,
+        InspectionReportBuilder builder,
+        CancellationToken ct)
+    {
+        var pdf = await builder.RenderAsync(new InspectionId(id), ct);
+        if (pdf is null)
+        {
+            return Results.NotFound();
+        }
+        return Results.File(pdf, "application/pdf", $"inspection-{id}.pdf");
     }
 
     private static async Task<IResult> ListAsync(
