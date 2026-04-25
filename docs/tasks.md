@@ -112,6 +112,12 @@ Každý task: **Cíl**, **Akceptační kritéria** (checklist), **Deliverables**
 
 ### TASK 2.1 — Domain: Customer, Location, Boiler
 
+- [x] Strongly-typed IDs (`CustomerId`, `LocationId`, `BoilerId`).
+- [x] `Customer` aggregate (Person/Company, IČO jen pro Company, kontaktní info, rename, notes) + `CustomerCreated` event.
+- [x] `Location` aggregate (adresa + GPS VO, customer FK) + `LocationCreated` event.
+- [x] `Boiler` aggregate (QR `AK-XXXX-XX` Crockford Base32, manufacturer/model/sn/output_kw/fuel/installed_at, RecordInspection invariants) + `BoilerRegistered`/`BoilerInspectionRecorded` events.
+- [x] Unit testy pro všechny invariants (51 testů: 14 Customer + 12 Location + 13 Boiler).
+
 ### TASK 2.2 — CRUD API: /api/v1/customers, /locations, /boilers
 - [ ] GET (pagination + filter), GET by id, POST, PUT, DELETE (soft delete).
 - [ ] Cursor-based pagination (`{ items, nextCursor }`).
