@@ -1,0 +1,140 @@
+name: Deploy
+
+# Spustí se po úspěšném CI workflow na main, nebo ručně přes Actions UI.
+# Required GitHub secrets:
+#   VPS_HOST     - IP/hostname VPS (např. 80.211.223.147)
+#   VPS_USER     - SSH user (typicky root nebo deploy)
+#   VPS_SSH_KEY  - private SSH key pro VPS_USER (PEM/OpenSSH formát)
+# GHCR push používá automatický GITHUB_TOKEN (žádný extra secret).
+#
+# Rollback: ručně edituj /opt/azkotle/deploy/.env.prod a změň
+# AZKOTLE_IMAGE_TAG=sha-<previous-short-sha>, pak `docker compose pull
+# && up -d` na VPS.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  gate:
+    name: Gate (CI must pass)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - run: echo "Gate passed (event=${{ github.event_name }}, ci=${{ github.event.workflow_run.conclusion }})"
+
+  build-and-push:
+    name: Build + Push (${{ matrix.image.name }})
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: api
+            dockerfile: deploy/Dockerfile.api
+          - name: web
+            dockerfile: deploy/Dockerfile.web
+    outputs:
+      sha_tag: ${{ steps.tag.outputs.sha_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute short SHA tag
+        id: tag
+        run: echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/azkotle-${{ matrix.image.name }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+
+      - name: Build + push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VPS + smoke test
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: SHA_TAG
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export SHA_TAG="${{ needs.build-and-push.outputs.sha_tag }}"
+            echo "[deploy] image tag: ${SHA_TAG}"
+
+            cd /opt/azkotle
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            cd deploy
+            # Update AZKOTLE_IMAGE_TAG in .env.prod to the new SHA so compose
+            # pulls the just-built images (and rollback is just env edit).
+            if grep -q '^AZKOTLE_IMAGE_TAG=' .env.prod; then
+                sed -i "s|^AZKOTLE_IMAGE_TAG=.*|AZKOTLE_IMAGE_TAG=${SHA_TAG}|" .env.prod
+            else
+                echo "AZKOTLE_IMAGE_TAG=${SHA_TAG}" >> .env.prod
+            fi
+
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull api app
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
+
+            # Cleanup obsolete images (keep last 5).
+            docker image prune -f --filter "until=168h" || true
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          echo "[smoke] waiting 15s for new containers to settle…"
+          sleep 15
+          for url in "https://api.az-kotle.cz/health" "https://api.az-kotle.cz/health/ready" "https://app.az-kotle.cz/health"; do
+              echo "[smoke] GET ${url}"
+              curl -fsS --max-time 10 "${url}" > /dev/null
+          done
+          echo "[smoke] OK"
