@@ -11,6 +11,7 @@ using AzKotle.Infrastructure.Inspections;
 using AzKotle.Infrastructure.Pdf;
 using AzKotle.Infrastructure.QrCodes;
 using AzKotle.Infrastructure.Storage;
+using AzKotle.Infrastructure.Tenants;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -65,6 +66,7 @@ builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(Stor
 builder.Services.AddSingleton<IFileStorage, S3FileStorage>();
 builder.Services.AddScoped<InspectionSignService>();
 builder.Services.AddScoped<InspectionPdfDownloadService>();
+builder.Services.AddScoped<TenantBrandingService>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {
@@ -236,6 +238,7 @@ app.MapGet("/whoami", (ITenantContext tenantContext) =>
 
 app.MapAuthEndpoints();
 app.MapLookupEndpoints();
+app.MapTenantBrandingEndpoints();
 app.MapCustomerEndpoints();
 app.MapLocationEndpoints();
 app.MapBoilerEndpoints();

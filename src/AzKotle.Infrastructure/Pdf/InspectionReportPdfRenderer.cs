@@ -44,6 +44,13 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
         {
             col.Item().Row(row =>
             {
+                if (data.LogoImage is { Length: > 0 })
+                {
+                    row.ConstantItem(80).Height(40).AlignLeft().AlignMiddle()
+                        .Image(data.LogoImage).FitArea();
+                    row.ConstantItem(10);
+                }
+
                 row.RelativeItem().Column(left =>
                 {
                     left.Item().Text(data.Tenant.CompanyName).Bold().FontSize(14);

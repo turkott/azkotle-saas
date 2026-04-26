@@ -45,6 +45,9 @@ builder.Services.AddHttpClient<BoilersApiClient>(client => client.BaseAddress = 
 builder.Services.AddHttpClient<InspectionsApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
     .AddHttpMessageHandler<BrowserCredentialsHandler>()
     .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<TenantBrandingApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<BrowserCredentialsHandler>()
+    .AddHttpMessageHandler<JwtAuthHandler>();
 
 builder.Services.AddHttpClient<InspectionSchemaClient>(client =>
 {

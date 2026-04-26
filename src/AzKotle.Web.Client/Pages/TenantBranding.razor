@@ -1,0 +1,92 @@
+@page "/settings/branding"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Authorization
+@inject TenantBrandingApiClient BrandingClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Branding · AZ KOTLE</PageTitle>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">Pro zobrazení této stránky se přihlas.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h5">Firemní branding</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Logo se objeví v hlavičce každé revizní zprávy. PNG nebo JPEG, max 500&nbsp;KB.
+            </MudText>
+
+            <MudCard Elevation="0" Outlined>
+                <MudCardContent>
+                    <MudStack Spacing="3">
+                        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".png,.jpg,.jpeg"
+                                       MaximumFileCount="1" Disabled="_uploading">
+                            <ActivatorContent>
+                                <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.UploadFile" Disabled="_uploading">
+                                    @(_uploading ? "Nahrávám…" : "Vybrat soubor")
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+
+                        @if (!string.IsNullOrEmpty(_lastError))
+                        {
+                            <MudAlert Severity="Severity.Error" Dense>@_lastError</MudAlert>
+                        }
+
+                        @if (_logoUpdatedAt is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Naposledy nahráno @_logoUpdatedAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                            </MudText>
+                        }
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        </MudStack>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private const long MaxBytes = 500 * 1024;
+
+    private bool _uploading;
+    private string? _lastError;
+    private DateTime? _logoUpdatedAt;
+
+    private async Task OnFileSelected(IBrowserFile? file)
+    {
+        _lastError = null;
+        if (file is null) return;
+
+        if (file.Size > MaxBytes)
+        {
+            _lastError = $"Soubor je příliš velký ({file.Size / 1024} KB), maximum je {MaxBytes / 1024} KB.";
+            return;
+        }
+        if (file.ContentType is not ("image/png" or "image/jpeg"))
+        {
+            _lastError = $"Nepodporovaný formát {file.ContentType}. Povolené: PNG, JPEG.";
+            return;
+        }
+
+        _uploading = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxBytes);
+            var resp = await BrandingClient.UploadLogoAsync(stream, file.Name, file.ContentType, file.Size);
+            _logoUpdatedAt = resp.LogoUpdatedAt;
+            Snackbar.Add("Logo nahráno. Objeví se v dalších revizních zprávách.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _lastError = $"Nahrávání selhalo: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+}

@@ -21,6 +21,18 @@ public sealed partial class Tenant : DomainEntity
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// S3 object key (e.g. <c>tenants/{tid}/branding/logo</c>) of the tenant logo.
+    /// Null when no logo uploaded. PDF builder embeds the bytes in report headers.
+    /// </summary>
+    public string? LogoStorageKey { get; private set; }
+
+    /// <summary>
+    /// UTC timestamp of the last logo upload. Used by UI as cache-busting query
+    /// suffix when displaying the logo preview.
+    /// </summary>
+    public DateTime? LogoUpdatedAt { get; private set; }
+
     private Tenant()
     {
         // EF Core
@@ -129,6 +141,15 @@ public sealed partial class Tenant : DomainEntity
     {
         Status = TenantStatus.Churned;
         UpdatedAt = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+    }
+
+    public void SetLogo(string storageKey, TimeProvider? timeProvider = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storageKey);
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+        LogoStorageKey = storageKey;
+        LogoUpdatedAt = now;
+        UpdatedAt = now;
     }
 
     [GeneratedRegex("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")]

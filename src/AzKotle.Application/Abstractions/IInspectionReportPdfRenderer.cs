@@ -20,7 +20,8 @@ public sealed record InspectionReportData(
     IReadOnlyList<InspectionReportSection> FormSections,
     string? Findings,
     string? Recommendations,
-    byte[]? SignatureImage = null);
+    byte[]? SignatureImage = null,
+    byte[]? LogoImage = null);
 
 public sealed record InspectionReportTenant(
     string CompanyName,

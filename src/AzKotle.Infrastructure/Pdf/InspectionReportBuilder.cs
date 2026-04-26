@@ -5,6 +5,7 @@ using AzKotle.Domain.Entities.Boilers;
 using AzKotle.Domain.Entities.Inspections;
 using AzKotle.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AzKotle.Infrastructure.Pdf;
 
@@ -13,15 +14,21 @@ public sealed class InspectionReportBuilder
     private readonly AzKotleDbContext _db;
     private readonly IInspectionReportPdfRenderer _renderer;
     private readonly FormSectionMapper _formSectionMapper;
+    private readonly IFileStorage _storage;
+    private readonly ILogger<InspectionReportBuilder> _logger;
 
     public InspectionReportBuilder(
         AzKotleDbContext db,
         IInspectionReportPdfRenderer renderer,
-        FormSectionMapper formSectionMapper)
+        FormSectionMapper formSectionMapper,
+        IFileStorage storage,
+        ILogger<InspectionReportBuilder> logger)
     {
         _db = db;
         _renderer = renderer;
         _formSectionMapper = formSectionMapper;
+        _storage = storage;
+        _logger = logger;
     }
 
     public async Task<byte[]?> RenderAsync(InspectionId inspectionId, CancellationToken ct)
@@ -68,6 +75,8 @@ public sealed class InspectionReportBuilder
             return null;
         }
 
+        var logoImage = await TryFetchLogoAsync(tenant.LogoStorageKey, ct);
+
         var data = new InspectionReportData(
             InspectionNumber: ShortNumber(inspection.Id, inspection.PerformedAt),
             Type: inspection.Type,
@@ -83,9 +92,36 @@ public sealed class InspectionReportBuilder
             FormSections: _formSectionMapper.Map(inspection.Type, inspection.FormDataJson),
             Findings: inspection.Findings,
             Recommendations: inspection.Recommendations,
-            SignatureImage: inspection.SignatureData);
+            SignatureImage: inspection.SignatureData,
+            LogoImage: logoImage);
 
         return _renderer.Render(data);
+    }
+
+    private async Task<byte[]?> TryFetchLogoAsync(string? storageKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(storageKey))
+        {
+            return null;
+        }
+        try
+        {
+            await using var stream = await _storage.GetAsync(storageKey, ct);
+            if (stream is null)
+            {
+                return null;
+            }
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, ct);
+            return ms.ToArray();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Logo failure must NEVER block the report — sign / preview still produce
+            // a valid PDF without it. Operator can re-upload via tenant settings.
+            _logger.LogWarning(ex, "Tenant logo fetch failed for key {LogoKey}; rendering without logo.", storageKey);
+            return null;
+        }
     }
 
     public static string ShortNumber(InspectionId id, DateTime performedAt) =>

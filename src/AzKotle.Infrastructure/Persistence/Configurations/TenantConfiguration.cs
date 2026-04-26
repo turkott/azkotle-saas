@@ -66,6 +66,14 @@ internal sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(t => t.LogoStorageKey)
+            .HasColumnName("logo_storage_key")
+            .HasMaxLength(256);
+
+        builder.Property(t => t.LogoUpdatedAt)
+            .HasColumnName("logo_updated_at")
+            .HasColumnType("timestamptz");
+
         builder.Ignore(t => t.DomainEvents);
     }
 }
