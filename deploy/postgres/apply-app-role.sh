@@ -35,15 +35,25 @@ if [[ ! -f "$INIT_SCRIPT" ]]; then
     exit 1
 fi
 
-# Načti env vars z .env.prod (export, aby šly předat docker compose exec).
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+# Extrakce konkrétních klíčů přes grep — NEpoužívat `set -a; . "$ENV_FILE"`,
+# protože .env.prod obsahuje hodnoty s nekvótovanými mezerami (typicky
+# BACKUP_CRON=0 3 * * *), které by bash interpretoval jako příkazy. To se
+# reálně stalo při prvním běhu Iterace 1.1 — viz commit history.
+extract() {
+    grep "^${1}=" "$ENV_FILE" | head -1 | cut -d= -f2-
+}
 
-if [[ -z "${APP_DB_PASSWORD:-}" ]]; then
+APP_DB_PASSWORD=$(extract APP_DB_PASSWORD)
+POSTGRES_USER=$(extract POSTGRES_USER)
+POSTGRES_DB=$(extract POSTGRES_DB)
+
+if [[ -z "${APP_DB_PASSWORD}" ]]; then
     echo "FATAL: APP_DB_PASSWORD není v ${ENV_FILE}." >&2
     echo "       Vygeneruj: openssl rand -base64 32" >&2
+    exit 1
+fi
+if [[ -z "${POSTGRES_USER}" || -z "${POSTGRES_DB}" ]]; then
+    echo "FATAL: POSTGRES_USER nebo POSTGRES_DB chybí v ${ENV_FILE}." >&2
     exit 1
 fi
 
@@ -52,14 +62,18 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" cp \
     "$INIT_SCRIPT" postgres:/tmp/01-create-app-role.sh
 
 echo "[apply-app-role] running script as ${POSTGRES_USER}..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec \
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T \
     -e APP_DB_PASSWORD="$APP_DB_PASSWORD" \
     -e POSTGRES_USER="$POSTGRES_USER" \
     -e POSTGRES_DB="$POSTGRES_DB" \
     postgres bash /tmp/01-create-app-role.sh
 
+echo "[apply-app-role] cleaning up tmp script in container..."
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
+    rm -f /tmp/01-create-app-role.sh
+
 echo "[apply-app-role] verifying azkotle_app role attributes..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec \
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T \
     postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     -c "SELECT rolname, rolsuper, rolbypassrls, rolcanlogin FROM pg_roles WHERE rolname = 'azkotle_app';"
 
