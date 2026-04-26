@@ -4,6 +4,14 @@ using AzKotle.Application.Auth;
 
 namespace AzKotle.Web.Client.Auth;
 
+/// <summary>
+/// HTTP klient pro <c>/api/v1/auth/*</c> endpointy. Používá vlastní
+/// <see cref="HttpClient"/> bez <see cref="JwtAuthHandler"/> — důvody:
+///  (1) auth endpointy jsou anonymní (žádný Bearer netřeba),
+///  (2) odděluje DI graf — JwtAuthHandler injecting AuthApiClient pro
+///      401 retry by jinak vyrobil cyklus.
+/// Cookies (refresh) jdou přes <see cref="BrowserCredentialsHandler"/>.
+/// </summary>
 public sealed class AuthApiClient
 {
     private const string AuthPath = "api/v1/auth";
@@ -11,42 +19,89 @@ public sealed class AuthApiClient
 
     private readonly HttpClient _http;
     private readonly AuthSession _session;
+    private readonly TenantSlugStorage _slugStorage;
 
-    public AuthApiClient(HttpClient http, AuthSession session)
+    public AuthApiClient(HttpClient http, AuthSession session, TenantSlugStorage slugStorage)
     {
         _http = http;
         _session = session;
+        _slugStorage = slugStorage;
     }
 
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
         using var response = await _http.PostAsJsonAsync($"{AuthPath}/register", request, _serializerOptions, ct);
-        return await ReadResultAsync(response, ct);
+        return await ReadAuthResponseAsync(response, request.TenantSlug, ct);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         using var response = await _http.PostAsJsonAsync($"{AuthPath}/login", request, _serializerOptions, ct);
-        return await ReadResultAsync(response, ct);
+        return await ReadAuthResponseAsync(response, request.TenantSlug, ct);
+    }
+
+    /// <summary>
+    /// Pokus o navázání session pouze přes přeživší <c>azkotle_refresh</c> cookie.
+    /// Volá se z <see cref="JwtAuthHandler"/> na 401 retry a z bootu v Program.cs.
+    /// Vrací <c>true</c> pokud server vydal nový access token, jinak <c>false</c>
+    /// (anonymous nebo síťová chyba).
+    /// </summary>
+    public async Task<bool> SilentRefreshAsync(string? tenantSlug, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = new RefreshRequest(tenantSlug);
+            using var response = await _http.PostAsJsonAsync($"{AuthPath}/refresh", body, _serializerOptions, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<AuthResponse>(_serializerOptions, ct);
+            if (payload is null)
+            {
+                return false;
+            }
+
+            await _session.SetAsync(BuildTokens(payload, tenantSlug));
+            return true;
+        }
+        catch (HttpRequestException)
+        {
+            // network error / first visit / cookie missing → zůstává anonymous
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            return false;
+        }
     }
 
     public async Task LogoutAsync(CancellationToken ct = default)
     {
-        // Refresh token je v HttpOnly cookie — server si ho přečte sám.
-        // Body posíláme prázdné. Server v každém případě cookie smaže (Set-Cookie MaxAge=0).
+        // Refresh token žije v HttpOnly cookie — server si ho přečte sám, žádné body.
+        // Server vždy odpoví 204 + Set-Cookie s Max-Age=0 (clear). Pokud network failne,
+        // smazat session lokálně i tak — uživatel se chce odhlásit.
         try
         {
-            await _http.PostAsync($"{AuthPath}/logout", content: null, ct);
+            using var _ = await _http.PostAsync($"{AuthPath}/logout", content: null, ct);
         }
         catch (HttpRequestException)
         {
-            // Best-effort logout; local session is still cleared below.
+            // best-effort — local session se vyčistí níže
+        }
+        catch (TaskCanceledException)
+        {
         }
 
         await _session.ClearAsync();
+        await _slugStorage.ClearAsync();
     }
 
-    private async Task<AuthResult> ReadResultAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task<AuthResult> ReadAuthResponseAsync(
+        HttpResponseMessage response,
+        string? requestSlug,
+        CancellationToken ct)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -56,22 +111,29 @@ public sealed class AuthApiClient
                 return AuthResult.Failure("Prázdná odpověď serveru.");
             }
 
-            var tokens = new AuthTokens(
-                AccessToken: payload.AccessToken,
-                AccessTokenExpiresAt: DateTime.UtcNow.AddSeconds(payload.ExpiresIn),
-                UserId: payload.UserId,
-                TenantId: payload.TenantId,
-                Email: payload.Email,
-                Role: payload.Role,
-                TenantSlug: null);
+            await _session.SetAsync(BuildTokens(payload, requestSlug));
 
-            await _session.SetAsync(tokens);
+            // Persistuj slug pro silent refresh napříč browser restartem.
+            if (!string.IsNullOrWhiteSpace(requestSlug))
+            {
+                await _slugStorage.SetAsync(requestSlug);
+            }
+
             return AuthResult.Ok();
         }
 
         var message = await FormatErrorAsync(response, ct);
         return AuthResult.Failure(message);
     }
+
+    private static AuthTokens BuildTokens(AuthResponse payload, string? slug) => new(
+        AccessToken: payload.AccessToken,
+        AccessTokenExpiresAt: DateTime.UtcNow.AddSeconds(payload.ExpiresIn),
+        UserId: payload.UserId,
+        TenantId: payload.TenantId,
+        Email: payload.Email,
+        Role: payload.Role,
+        TenantSlug: slug);
 
     private static async Task<string> FormatErrorAsync(HttpResponseMessage response, CancellationToken ct)
     {

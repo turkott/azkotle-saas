@@ -1,8 +1,12 @@
 namespace AzKotle.Web.Client.Auth;
 
-// Refresh token už NENÍ v AuthTokens — žije v HttpOnly Secure SameSite=Strict cookie
-// (azkotle_refresh, Path=/api/v1/auth) spravované backendem. JS k němu nemá přístup.
-// Access token zůstává v paměti (BrowserStorage) — Sprint 1 / F3 cookie cutover.
+/// <summary>
+/// In-memory snapshot autentizovaného stavu klienta. Refresh token tu není —
+/// žije v HttpOnly Secure SameSite=Strict cookie spravované backendem
+/// (<see cref="AzKotle.Api.Endpoints.AuthEndpoints"/>). JS k němu nemá přístup.
+/// AccessToken se po F5 ztratí — <see cref="AuthApiClient.SilentRefreshAsync"/>
+/// při bootu zkusí session obnovit přes přeživší cookie.
+/// </summary>
 public sealed record AuthTokens(
     string AccessToken,
     DateTime AccessTokenExpiresAt,
@@ -11,8 +15,3 @@ public sealed record AuthTokens(
     string Email,
     string Role,
     string? TenantSlug);
-
-internal static class AuthStorageKeys
-{
-    internal const string Tokens = "azkotle.auth";
-}

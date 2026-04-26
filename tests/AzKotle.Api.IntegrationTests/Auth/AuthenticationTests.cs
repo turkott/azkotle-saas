@@ -172,11 +172,11 @@ public sealed class AuthenticationTests : IClassFixture<AzKotleApiFactory>
         using var client = CreateClient();
         var request = NewRegisterRequest("logout-flow", "logout@example.com");
         var registerResp = await client.PostAsJsonAsync("/api/v1/auth/register", request);
-        var registered = await registerResp.Content.ReadFromJsonAsync<AuthResponse>();
         var tokenBeforeLogout = ExtractCookieValue(registerResp, RefreshCookieName);
 
+        // Logout je AllowAnonymous — cookie sama prokazuje identitu (HttpOnly + SameSite=Strict).
         var logoutReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/logout");
-        logoutReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", registered!.AccessToken);
+        logoutReq.Headers.Host = $"{request.TenantSlug}.az-kotle.cz";
         logoutReq.Headers.Add("Cookie", $"{RefreshCookieName}={tokenBeforeLogout}");
         var logoutResp = await client.SendAsync(logoutReq);
         logoutResp.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -195,10 +195,26 @@ public sealed class AuthenticationTests : IClassFixture<AzKotleApiFactory>
     }
 
     [Fact]
-    public async Task Protected_Endpoint_Without_Bearer_Returns_401()
+    public async Task Logout_without_cookie_succeeds_silently_with_clear_header()
     {
+        // UX: uživatel s expirovaným / chybějícím refresh tokenem se musí umět odhlásit
+        // (cookie i tak smazána, lokální session vyčištěna).
         using var client = CreateClient();
         var resp = await client.PostAsync("/api/v1/auth/logout", content: null);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var clearHeader = resp.Headers.GetValues("Set-Cookie")
+            .FirstOrDefault(h => h.StartsWith($"{RefreshCookieName}=", StringComparison.Ordinal));
+        clearHeader.Should().NotBeNull("logout vrací clear cookie i bez vstupní cookie");
+    }
+
+    [Fact]
+    public async Task Protected_Endpoint_Without_Bearer_Returns_401()
+    {
+        // Logout už NENÍ Bearer-protected (cookie sama prokazuje identitu),
+        // takže testujeme proti běžnému CRUD endpointu.
+        using var client = CreateClient();
+        var resp = await client.GetAsync("/api/v1/customers");
 
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -209,7 +225,7 @@ public sealed class AuthenticationTests : IClassFixture<AzKotleApiFactory>
         using var client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "not.a.jwt");
 
-        var resp = await client.PostAsync("/api/v1/auth/logout", content: null);
+        var resp = await client.GetAsync("/api/v1/customers");
 
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

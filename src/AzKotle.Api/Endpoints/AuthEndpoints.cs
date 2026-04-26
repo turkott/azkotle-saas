@@ -52,9 +52,14 @@ public static class AuthEndpoints
             .WithMetadata(new AllowAnonymousTenantAttribute())
             .AllowAnonymous();
 
+        // Logout NEMÁ RequireAuthorization — refresh cookie sama prokazuje identitu
+        // (HttpOnly + SameSite=Strict eliminuje cross-site abuse). Bez toho by
+        // uživatel s expirovaným access tokenem nemohl odhlásit a serverová cookie
+        // by žila až do své Max-Age (30 dní), zbytečně si držela DB záznam.
         group.MapPost("/logout", LogoutAsync)
             .WithName("AuthLogout")
-            .RequireAuthorization();
+            .WithMetadata(new AllowAnonymousTenantAttribute())
+            .AllowAnonymous();
 
         return routes;
     }
