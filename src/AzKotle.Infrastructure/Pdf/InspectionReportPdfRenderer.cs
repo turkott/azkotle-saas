@@ -123,7 +123,15 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
             {
                 row.RelativeItem().Column(c =>
                 {
-                    c.Item().PaddingTop(20).LineHorizontal(0.5f).LineColor(Colors.Grey.Darken1);
+                    if (data.SignatureImage is { Length: > 0 })
+                    {
+                        c.Item().Height(50).AlignLeft().Image(data.SignatureImage).FitArea();
+                    }
+                    else
+                    {
+                        c.Item().PaddingTop(20);
+                    }
+                    c.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Darken1);
                     c.Item().Text("Podpis technika").FontSize(8).FontColor(Colors.Grey.Darken1);
                     c.Item().Text(data.Technician.FullName).FontSize(10);
                     if (!string.IsNullOrWhiteSpace(data.Technician.LicenseNo))
@@ -134,7 +142,7 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
                 row.ConstantItem(20);
                 row.RelativeItem().Column(c =>
                 {
-                    c.Item().PaddingTop(20).LineHorizontal(0.5f).LineColor(Colors.Grey.Darken1);
+                    c.Item().PaddingTop(50).LineHorizontal(0.5f).LineColor(Colors.Grey.Darken1);
                     c.Item().Text("Podpis provozovatele").FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
             });

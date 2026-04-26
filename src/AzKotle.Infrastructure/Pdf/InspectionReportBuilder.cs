@@ -1,5 +1,5 @@
-using System.Text.Json;
 using AzKotle.Application.Abstractions;
+using AzKotle.Application.Inspections;
 using AzKotle.Domain.Common;
 using AzKotle.Domain.Entities.Boilers;
 using AzKotle.Domain.Entities.Inspections;
@@ -12,11 +12,16 @@ public sealed class InspectionReportBuilder
 {
     private readonly AzKotleDbContext _db;
     private readonly IInspectionReportPdfRenderer _renderer;
+    private readonly FormSectionMapper _formSectionMapper;
 
-    public InspectionReportBuilder(AzKotleDbContext db, IInspectionReportPdfRenderer renderer)
+    public InspectionReportBuilder(
+        AzKotleDbContext db,
+        IInspectionReportPdfRenderer renderer,
+        FormSectionMapper formSectionMapper)
     {
         _db = db;
         _renderer = renderer;
+        _formSectionMapper = formSectionMapper;
     }
 
     public async Task<byte[]?> RenderAsync(InspectionId inspectionId, CancellationToken ct)
@@ -75,68 +80,16 @@ public sealed class InspectionReportBuilder
             Boiler: new InspectionReportBoiler(
                 boiler.QrCode, boiler.Manufacturer, boiler.Model, boiler.SerialNo,
                 boiler.OutputKw, FuelLabel(boiler.FuelType), boiler.InstalledAt),
-            FormSections: ParseFormSections(inspection.FormDataJson),
+            FormSections: _formSectionMapper.Map(inspection.Type, inspection.FormDataJson),
             Findings: inspection.Findings,
-            Recommendations: inspection.Recommendations);
+            Recommendations: inspection.Recommendations,
+            SignatureImage: inspection.SignatureData);
 
         return _renderer.Render(data);
     }
 
     public static string ShortNumber(InspectionId id, DateTime performedAt) =>
         $"{performedAt:yyyy}-{id.Value.ToString("N")[..8].ToUpperInvariant()}";
-
-    private static IReadOnlyList<InspectionReportSection> ParseFormSections(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json == "{}")
-        {
-            return Array.Empty<InspectionReportSection>();
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return Array.Empty<InspectionReportSection>();
-            }
-
-            var fields = new List<InspectionReportField>();
-            foreach (var property in doc.RootElement.EnumerateObject())
-            {
-                fields.Add(new InspectionReportField(
-                    Label: HumanizeKey(property.Name),
-                    DisplayValue: FormatValue(property.Value)));
-            }
-            return fields.Count == 0
-                ? Array.Empty<InspectionReportSection>()
-                : new[] { new InspectionReportSection("Vyplněné údaje", fields) };
-        }
-        catch (JsonException)
-        {
-            return Array.Empty<InspectionReportSection>();
-        }
-    }
-
-    private static string HumanizeKey(string key)
-    {
-        var trimmed = key.Replace('_', ' ').Trim();
-        return trimmed.Length switch
-        {
-            0 => key,
-            1 => trimmed.ToUpperInvariant(),
-            _ => char.ToUpperInvariant(trimmed[0]) + trimmed[1..],
-        };
-    }
-
-    private static string FormatValue(JsonElement value) => value.ValueKind switch
-    {
-        JsonValueKind.String => value.GetString() ?? string.Empty,
-        JsonValueKind.Number => value.GetRawText(),
-        JsonValueKind.True => "Ano",
-        JsonValueKind.False => "Ne",
-        JsonValueKind.Null => "—",
-        _ => value.GetRawText(),
-    };
 
     private static string FuelLabel(FuelType fuel) => fuel switch
     {

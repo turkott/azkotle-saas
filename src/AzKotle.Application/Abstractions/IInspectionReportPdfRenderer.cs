@@ -19,7 +19,8 @@ public sealed record InspectionReportData(
     InspectionReportBoiler Boiler,
     IReadOnlyList<InspectionReportSection> FormSections,
     string? Findings,
-    string? Recommendations);
+    string? Recommendations,
+    byte[]? SignatureImage = null);
 
 public sealed record InspectionReportTenant(
     string CompanyName,

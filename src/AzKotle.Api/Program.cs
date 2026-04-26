@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using AzKotle.Api.Endpoints;
 using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
+using AzKotle.Application.Inspections;
 using AzKotle.Infrastructure;
 using AzKotle.Infrastructure.Auth;
 using AzKotle.Infrastructure.External;
@@ -56,6 +57,8 @@ builder.Services.AddSingleton<IBoilerQrSlugGenerator, BoilerQrSlugGenerator>();
 builder.Services.AddSingleton<IQrCodeImageRenderer, QrCoderImageRenderer>();
 builder.Services.AddSingleton<IBoilerLabelPdfRenderer, BoilerLabelPdfRenderer>();
 builder.Services.AddSingleton<IInspectionReportPdfRenderer, InspectionReportPdfRenderer>();
+builder.Services.AddSingleton<IInspectionTemplateProvider, EmbeddedInspectionTemplateProvider>();
+builder.Services.AddSingleton<FormSectionMapper>();
 builder.Services.AddScoped<InspectionReportBuilder>();
 
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
