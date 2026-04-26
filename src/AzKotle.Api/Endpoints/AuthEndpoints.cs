@@ -145,6 +145,12 @@ public static class AuthEndpoints
             return InvalidCredentials();
         }
 
+        // Transakce udržuje jednu connection napříč set_config + queries — bez ní
+        // by EF Core otevřel/zavřel novou connection pro každý command, interceptor
+        // by reset tenant context na empty a RLS-protected query (users/refresh_tokens)
+        // by vrátila 0 řádků. Stejný důvod jako u RegisterAsync.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
         await db.Database.ExecuteSqlRawAsync(
             "SELECT set_config('app.current_tenant_id', {0}, false)",
             new object[] { tenantId.Value.Value.ToString() },
@@ -165,6 +171,8 @@ public static class AuthEndpoints
 
         user.RecordLogin(time);
         var issued = await IssueTokensAndSaveAsync(db, jwt, tenantId.Value, user, time, ct);
+        await tx.CommitAsync(ct);
+
         SetRefreshCookie(httpContext, issued.PlainRefreshToken, jwtOptions.Value);
         return Results.Ok(issued.Public);
     }
@@ -202,6 +210,11 @@ public static class AuthEndpoints
             return InvalidRefresh();
         }
 
+        // Transakce udržuje jednu connection napříč set_config a všemi RLS-protected
+        // queries — bez ní by se mezi commands renderovala nová connection a interceptor
+        // by smazal tenant context (token hash by se "ztratil" RLS deny-all filtrem).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
         await db.Database.ExecuteSqlRawAsync(
             "SELECT set_config('app.current_tenant_id', {0}, false)",
             new object[] { tenantId.Value.Value.ToString() },
@@ -225,6 +238,8 @@ public static class AuthEndpoints
                     existing.UserId.Value, existing.TenantId.Value);
                 await RevokeChainAsync(db, existing, now, ct);
                 await db.SaveChangesAsync(ct);
+                // Commit aby chain revocation přežila return v transakci.
+                await tx.CommitAsync(ct);
             }
             else
             {
@@ -245,6 +260,7 @@ public static class AuthEndpoints
         db.RefreshTokens.Add(replacement);
         existing.RevokeAndReplace(replacement.Id, time);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
 
         var access = jwt.IssueAccessToken(user.Id, existing.TenantId, user.Email, user.Role);
         SetRefreshCookie(httpContext, newToken, jwtOptions.Value);
