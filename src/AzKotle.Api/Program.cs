@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using AzKotle.Api.Endpoints;
 using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
@@ -11,6 +12,8 @@ using AzKotle.Infrastructure.QrCodes;
 using AzKotle.Infrastructure.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Prometheus;
@@ -88,6 +91,41 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ForwardedHeaders: za Caddy reverse proxy (compose: api je jen na internal síti,
+// jediná cesta dovnitř je přes Caddy). KnownProxies/KnownNetworks vyčištěny —
+// věříme jakémukoli příchozímu X-Forwarded-For, protože síťová izolace zajišťuje,
+// že request mohl přijít jen přes Caddy. Bez toho by RemoteIpAddress byla
+// interní IP Caddy kontejneru a rate limiter by všem útočníkům dal jeden bucket.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// Rate limiting na auth endpointech — chrání Argon2id (~150 ms / 64 MB peak per verify)
+// před DoS. Limit konfigurovatelný (testy si přepíší přes UseSetting).
+const string AuthRateLimitPolicy = "auth";
+var authPermitLimit = builder.Configuration.GetValue("RateLimit:Auth:PermitLimit", 5);
+var authWindowSeconds = builder.Configuration.GetValue("RateLimit:Auth:WindowSeconds", 60);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AuthRateLimitPolicy, context =>
+    {
+        var key = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = authPermitLimit,
+            Window = TimeSpan.FromSeconds(authWindowSeconds),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+});
+
 const string CorsPolicy = "AzKotleCors";
 var isDevelopment = builder.Environment.IsDevelopment();
 builder.Services.AddCors(options =>
@@ -131,6 +169,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// MUSÍ být první middleware — nastaví Request.Scheme a RemoteIpAddress podle
+// X-Forwarded-* hlaviček od Caddy. Bez toho HttpsRedirection redirectuje
+// donekonečna a rate limiter partitionuje na interní IP Caddy.
+app.UseForwardedHeaders();
+
 app.UseHttpsRedirection();
 
 app.Use(async (ctx, next) =>
@@ -151,6 +194,11 @@ app.UseSerilogRequestLogging();
 app.UseHttpMetrics();
 
 app.UseCors(CorsPolicy);
+
+// Před UseAuthentication — chceme rate limit aplikovat dřív než Argon2id
+// běží v LoginAsync handleru. Routing už je vyřešený (Minimal API ho přidává
+// implicitně), takže rate limiter vidí endpoint metadata a zná policy.
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

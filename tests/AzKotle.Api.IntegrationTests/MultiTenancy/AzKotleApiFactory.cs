@@ -16,7 +16,7 @@ using Testcontainers.PostgreSql;
 
 namespace AzKotle.Api.IntegrationTests.MultiTenancy;
 
-public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     internal const string TestJwtSecret =
         "test-secret-DO-NOT-USE-IN-PRODUCTION-at-least-32-chars-long-filler-xyz";
@@ -154,6 +154,10 @@ public sealed class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.UseSetting("Storage:AccessKey", _testStorageOptions.AccessKey);
         builder.UseSetting("Storage:SecretKey", _testStorageOptions.SecretKey);
         builder.UseSetting("Storage:ForcePathStyle", "true");
+        // Default factory: rate limit prakticky vypnutý, aby existující testy
+        // nehit 429 limit při více /auth volání v jedné test class.
+        // Pro testování samotného limiteru viz AuthRateLimitFactory.
+        builder.UseSetting("RateLimit:Auth:PermitLimit", "10000");
     }
 
     private static async Task Execute(NpgsqlConnection conn, string sql)
