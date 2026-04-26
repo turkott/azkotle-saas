@@ -1,10 +1,11 @@
 <Project>
   <!--
     Husky.Net auto-install only from the repo root (where this file lives).
-    Runs once per build, not once per project. HUSKY=0 skips in CI.
+    Self-skips when CI=true or when .git is absent (Docker build context).
+    HUSKY=0 remains as a manual override.
   -->
   <Target Name="husky" BeforeTargets="Restore;CollectPackageReferences"
-          Condition="'$(HUSKY)' != '0' AND '$(IsCrossTargetingBuild)' != 'true' AND '$(MSBuildProjectFullPath)' != ''">
+          Condition="'$(HUSKY)' != '0' AND '$(CI)' != 'true' AND Exists('$(MSBuildThisFileDirectory).git') AND '$(IsCrossTargetingBuild)' != 'true'">
     <Exec Command="dotnet tool restore"
           WorkingDirectory="$(MSBuildThisFileDirectory)"
           StandardOutputImportance="Low"

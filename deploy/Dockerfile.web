@@ -23,7 +23,6 @@ COPY src/AzKotle.Infrastructure/AzKotle.Infrastructure.csproj src/AzKotle.Infras
 COPY src/AzKotle.Shared/AzKotle.Shared.csproj          src/AzKotle.Shared/
 COPY src/AzKotle.Web/AzKotle.Web.csproj                src/AzKotle.Web/
 COPY src/AzKotle.Web.Client/AzKotle.Web.Client.csproj  src/AzKotle.Web.Client/
-ENV HUSKY=0
 RUN dotnet restore src/AzKotle.Web/AzKotle.Web.csproj
 
 # Build + publish.
