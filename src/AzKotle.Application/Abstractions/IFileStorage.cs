@@ -8,7 +8,11 @@ public interface IFileStorage
 
     Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default);
 
-    Task<string> CreatePresignedDownloadUrlAsync(string key, TimeSpan ttl, CancellationToken cancellationToken = default);
+    Task<string> CreatePresignedDownloadUrlAsync(
+        string key,
+        TimeSpan ttl,
+        string? downloadFileName = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class StorageOptions

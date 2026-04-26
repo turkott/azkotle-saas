@@ -64,6 +64,7 @@ builder.Services.AddScoped<InspectionReportBuilder>();
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.AddSingleton<IFileStorage, S3FileStorage>();
 builder.Services.AddScoped<InspectionSignService>();
+builder.Services.AddScoped<InspectionPdfDownloadService>();
 
 builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 {

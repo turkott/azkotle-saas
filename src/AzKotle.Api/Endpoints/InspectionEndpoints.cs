@@ -26,6 +26,7 @@ public static class InspectionEndpoints
         group.MapPost("/", CreateAsync).WithName("InspectionCreate");
         group.MapPut("/{id:guid}/draft", UpdateDraftAsync).WithName("InspectionUpdateDraft");
         group.MapGet("/{id:guid}/preview.pdf", PreviewPdfAsync).WithName("InspectionPreviewPdf");
+        group.MapGet("/{id:guid}/pdf", DownloadPdfAsync).WithName("InspectionDownloadPdf");
         group.MapPost("/{id:guid}/sign", SignAsync).WithName("InspectionSign");
 
         return routes;
@@ -70,10 +71,40 @@ public static class InspectionEndpoints
         return result switch
         {
             SignInspectionResult.Success ok => Results.Ok(new SignedInspectionResponse(
-                ToDto(ok.Inspection), ok.DownloadUrl, ok.PdfSha256)),
+                ToDto(ok.Inspection), ok.PdfSha256)),
             SignInspectionResult.NotFound => Results.NotFound(),
             SignInspectionResult.InvalidState bad => Results.BadRequest(
                 new { error = "invalid_state", detail = bad.Reason }),
+            _ => Results.StatusCode(500),
+        };
+    }
+
+    private static async Task<IResult> DownloadPdfAsync(
+        Guid id,
+        InspectionPdfDownloadService downloadService,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        if (!TryGetUserId(user, out var actorId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        var result = await downloadService.IssueDownloadUrlAsync(
+            new InspectionId(id), actorId, ipAddress, userAgent, ct);
+
+        return result switch
+        {
+            IssuePdfUrlResult.Success ok => Results.Redirect(ok.Url, permanent: false, preserveMethod: false),
+            IssuePdfUrlResult.NotFound => Results.NotFound(),
             _ => Results.StatusCode(500),
         };
     }

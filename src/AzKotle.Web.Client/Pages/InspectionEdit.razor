@@ -13,6 +13,7 @@
 @inject BoilersApiClient BoilersClient
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@inject IJSRuntime Js
 
 <PageTitle>Revize · AZ KOTLE</PageTitle>
 
@@ -191,12 +192,12 @@
                                     </MudText>
                                 </MudStack>
                                 <MudSpacer />
-                                @if (!string.IsNullOrEmpty(_downloadUrl))
+                                @if (_inspection.Status == InspectionStatus.Signed)
                                 {
                                     <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                                StartIcon="@Icons.Material.Filled.Download"
-                                               OnClick="@(() => Nav.NavigateTo(_downloadUrl!, forceLoad: true))">
-                                        Stáhnout PDF
+                                               OnClick="DownloadPdfAsync" Disabled="_downloading">
+                                        @(_downloading ? "Stahuji…" : "Stáhnout PDF")
                                     </MudButton>
                                 }
                             </MudStack>
@@ -232,7 +233,7 @@
     private bool _signing;
     private SignaturePadCanvas? _signaturePad;
     private List<string> _missingRequiredFields = new();
-    private string? _downloadUrl;
+    private bool _downloading;
 
     private static readonly TimeSpan _autosaveDelay = TimeSpan.FromSeconds(5);
 
@@ -452,6 +453,28 @@
         _missingRequiredFields.Clear();
     }
 
+    private async Task DownloadPdfAsync()
+    {
+        if (_inspection is null || _downloading) return;
+        _downloading = true;
+        try
+        {
+            await using var stream = await InspectionsClient.DownloadPdfAsync(_inspection.Id);
+            using var streamRef = new DotNetStreamReference(stream);
+            var fileName = $"protokol-{_inspection.PerformedAt:yyyy}-{_inspection.Id.ToString("N")[..8].ToUpperInvariant()}.pdf";
+            await using var module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/file-download.js");
+            await module.InvokeVoidAsync("downloadFromStream", fileName, streamRef, "application/pdf");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Stažení PDF selhalo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _downloading = false;
+        }
+    }
+
     private async Task ConfirmSignAsync()
     {
         if (_inspection is null || _signing) return;
@@ -481,7 +504,6 @@
             var response = await InspectionsClient.SignAsync(_inspection.Id,
                 new SignInspectionRequest(signatureBase64));
             _inspection = response.Inspection;
-            _downloadUrl = response.DownloadUrl;
             _isReadOnly = true;
             _showSignSection = false;
             Snackbar.Add("Revize podepsána a uložena.", Severity.Success);

@@ -64,4 +64,11 @@ public sealed class InspectionsApiClient
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<SignedInspectionResponse>(_serializerOptions, ct))!;
     }
+
+    public async Task<Stream> DownloadPdfAsync(Guid id, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"api/v1/inspections/{id}/pdf", HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadAsStreamAsync(ct);
+    }
 }

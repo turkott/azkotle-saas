@@ -57,7 +57,6 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
         body.Inspection.PdfSha256!.Length.Should().Be(64);
         body.Inspection.SignedAt.Should().NotBeNull();
         body.PdfSha256.Should().Be(body.Inspection.PdfSha256);
-        body.DownloadUrl.Should().StartWith("http").And.Contain("X-Amz-Signature");
 
         // Verify storage object exists and SHA matches
         await using var stream = await _factory.TestStorage.GetAsync(body.Inspection.PdfB2Key!);

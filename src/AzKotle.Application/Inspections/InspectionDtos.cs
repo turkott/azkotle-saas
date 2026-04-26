@@ -17,7 +17,6 @@ public sealed record SignInspectionRequest(string? SignatureBase64);
 
 public sealed record SignedInspectionResponse(
     InspectionDto Inspection,
-    string DownloadUrl,
     string PdfSha256);
 
 public sealed record InspectionDto(

@@ -11,8 +11,6 @@ namespace AzKotle.Infrastructure.Inspections;
 
 public sealed class InspectionSignService
 {
-    public static readonly TimeSpan DefaultDownloadUrlTtl = TimeSpan.FromDays(7);
-
     private readonly AzKotleDbContext _db;
     private readonly InspectionReportBuilder _pdfBuilder;
     private readonly IFileStorage _storage;
@@ -83,8 +81,7 @@ public sealed class InspectionSignService
 
         await _db.SaveChangesAsync(ct);
 
-        var downloadUrl = await _storage.CreatePresignedDownloadUrlAsync(key, DefaultDownloadUrlTtl, ct);
-        return new SignInspectionResult.Success(inspection, downloadUrl, sha256);
+        return new SignInspectionResult.Success(inspection, sha256);
     }
 
     public static string BuildKey(TenantId tenantId, InspectionId inspectionId, DateTime performedAt) =>
@@ -93,7 +90,7 @@ public sealed class InspectionSignService
 
 public abstract record SignInspectionResult
 {
-    public sealed record Success(Inspection Inspection, string DownloadUrl, string PdfSha256) : SignInspectionResult;
+    public sealed record Success(Inspection Inspection, string PdfSha256) : SignInspectionResult;
     public sealed record NotFound : SignInspectionResult;
     public sealed record InvalidState(string Reason) : SignInspectionResult;
 }

@@ -100,7 +100,11 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         }
     }
 
-    public Task<string> CreatePresignedDownloadUrlAsync(string key, TimeSpan ttl, CancellationToken cancellationToken = default)
+    public Task<string> CreatePresignedDownloadUrlAsync(
+        string key,
+        TimeSpan ttl,
+        string? downloadFileName = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         if (ttl <= TimeSpan.Zero || ttl > TimeSpan.FromDays(7))
@@ -115,7 +119,28 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
             Expires = DateTime.UtcNow.Add(ttl),
             Verb = HttpVerb.GET,
         };
+        if (!string.IsNullOrWhiteSpace(downloadFileName))
+        {
+            // RFC 6266: ASCII-safe filename in quotes; for unicode names, filename* would be needed.
+            var safeName = SanitizeFileName(downloadFileName);
+            request.ResponseHeaderOverrides.ContentDisposition = $"attachment; filename=\"{safeName}\"";
+        }
         return _client.GetPreSignedURLAsync(request);
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        Span<char> buffer = stackalloc char[fileName.Length];
+        var written = 0;
+        foreach (var c in fileName)
+        {
+            buffer[written++] = c switch
+            {
+                '"' or '\\' or '\r' or '\n' => '_',
+                _ => c,
+            };
+        }
+        return new string(buffer[..written]);
     }
 
     public async Task EnsureBucketExistsAsync(CancellationToken cancellationToken = default)
