@@ -32,21 +32,15 @@ public sealed class AuthApiClient
 
     public async Task LogoutAsync(CancellationToken ct = default)
     {
-        var tokens = _session.Current ?? await _session.LoadAsync();
-        if (tokens is not null)
+        // Refresh token je v HttpOnly cookie — server si ho přečte sám.
+        // Body posíláme prázdné. Server v každém případě cookie smaže (Set-Cookie MaxAge=0).
+        try
         {
-            try
-            {
-                await _http.PostAsJsonAsync(
-                    $"{AuthPath}/logout",
-                    new LogoutRequest(tokens.RefreshToken),
-                    _serializerOptions,
-                    ct);
-            }
-            catch (HttpRequestException)
-            {
-                // Best-effort logout; local session is still cleared below.
-            }
+            await _http.PostAsync($"{AuthPath}/logout", content: null, ct);
+        }
+        catch (HttpRequestException)
+        {
+            // Best-effort logout; local session is still cleared below.
         }
 
         await _session.ClearAsync();
@@ -64,7 +58,6 @@ public sealed class AuthApiClient
 
             var tokens = new AuthTokens(
                 AccessToken: payload.AccessToken,
-                RefreshToken: payload.RefreshToken,
                 AccessTokenExpiresAt: DateTime.UtcNow.AddSeconds(payload.ExpiresIn),
                 UserId: payload.UserId,
                 TenantId: payload.TenantId,

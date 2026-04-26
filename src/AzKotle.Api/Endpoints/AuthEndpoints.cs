@@ -9,11 +9,14 @@ using AzKotle.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace AzKotle.Api.Endpoints;
@@ -21,6 +24,13 @@ namespace AzKotle.Api.Endpoints;
 public static class AuthEndpoints
 {
     private const string UniqueViolationSqlState = "23505";
+
+    /// <summary>
+    /// HttpOnly Secure SameSite=Strict cookie obsahující refresh token.
+    /// Path=/api/v1/auth omezuje kdy ji prohlížeč pošle (refresh + logout).
+    /// </summary>
+    internal const string RefreshCookieName = "azkotle_refresh";
+    internal const string RefreshCookiePath = "/api/v1/auth";
 
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder routes)
     {
@@ -55,6 +65,8 @@ public static class AuthEndpoints
         AzKotleDbContext db,
         IPasswordHasher hasher,
         IJwtTokenService jwt,
+        IOptions<JwtOptions> jwtOptions,
+        HttpContext httpContext,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -95,9 +107,13 @@ public static class AuthEndpoints
             return Results.Conflict(new { error = "email_taken" });
         }
 
-        var response = await IssueTokensAndSaveAsync(db, jwt, tenant.Id, user, time, ct);
+        var issued = await IssueTokensAndSaveAsync(db, jwt, tenant.Id, user, time, ct);
         await tx.CommitAsync(ct);
-        return Results.Ok(response);
+
+        // Cookie nastavujeme AŽ po commitu — kdyby commit failnul, klient
+        // nedostane cookie odkazující na neexistující DB záznam.
+        SetRefreshCookie(httpContext, issued.PlainRefreshToken, jwtOptions.Value);
+        return Results.Ok(issued.Public);
     }
 
     private static async Task<IResult> LoginAsync(
@@ -107,6 +123,8 @@ public static class AuthEndpoints
         ITenantContext tenantContext,
         IPasswordHasher hasher,
         IJwtTokenService jwt,
+        IOptions<JwtOptions> jwtOptions,
+        HttpContext httpContext,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -141,28 +159,41 @@ public static class AuthEndpoints
         }
 
         user.RecordLogin(time);
-        var response = await IssueTokensAndSaveAsync(db, jwt, tenantId.Value, user, time, ct);
-        return Results.Ok(response);
+        var issued = await IssueTokensAndSaveAsync(db, jwt, tenantId.Value, user, time, ct);
+        SetRefreshCookie(httpContext, issued.PlainRefreshToken, jwtOptions.Value);
+        return Results.Ok(issued.Public);
     }
 
     private static async Task<IResult> RefreshAsync(
-        [FromBody] RefreshRequest request,
+        [FromBody] RefreshRequest? request,
         IValidator<RefreshRequest> validator,
         AzKotleDbContext db,
         ITenantContext tenantContext,
         IJwtTokenService jwt,
+        IOptions<JwtOptions> jwtOptions,
+        HttpContext httpContext,
+        ILogger<RefreshTokenScope> logger,
         TimeProvider time,
         CancellationToken ct)
     {
-        var validation = await validator.ValidateAsync(request, ct);
+        if (!httpContext.Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken)
+            || string.IsNullOrWhiteSpace(refreshToken))
+        {
+            logger.LogWarning("Refresh attempted without {CookieName} cookie (Origin={Origin})",
+                RefreshCookieName, httpContext.Request.Headers.Origin.ToString());
+            return InvalidRefresh();
+        }
+
+        var validation = await validator.ValidateAsync(request ?? new RefreshRequest(), ct);
         if (!validation.IsValid)
         {
             return Results.ValidationProblem(validation.ToDictionary());
         }
 
-        var tenantId = await ResolveTenantAsync(db, tenantContext, request.TenantSlug, ct);
+        var tenantId = await ResolveTenantAsync(db, tenantContext, request?.TenantSlug, ct);
         if (tenantId is null)
         {
+            logger.LogWarning("Refresh failed: tenant unresolved (no JWT, no subdomain, no body slug)");
             return InvalidRefresh();
         }
 
@@ -171,10 +202,11 @@ public static class AuthEndpoints
             new object[] { tenantId.Value.Value.ToString() },
             ct);
 
-        var hash = jwt.HashRefreshToken(request.RefreshToken);
+        var hash = jwt.HashRefreshToken(refreshToken);
         var existing = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (existing is null)
         {
+            logger.LogWarning("Refresh failed: token hash not found (tenantId={TenantId})", tenantId.Value.Value);
             return InvalidRefresh();
         }
 
@@ -183,8 +215,15 @@ public static class AuthEndpoints
         {
             if (existing.ReplacedById is not null)
             {
+                logger.LogWarning(
+                    "Refresh token reuse detected — revoking chain (userId={UserId}, tenantId={TenantId})",
+                    existing.UserId.Value, existing.TenantId.Value);
                 await RevokeChainAsync(db, existing, now, ct);
                 await db.SaveChangesAsync(ct);
+            }
+            else
+            {
+                logger.LogWarning("Refresh failed: token revoked or expired (userId={UserId})", existing.UserId.Value);
             }
             return InvalidRefresh();
         }
@@ -192,6 +231,7 @@ public static class AuthEndpoints
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == existing.UserId, ct);
         if (user is null || !user.IsActive)
         {
+            logger.LogWarning("Refresh failed: user inactive or missing (userId={UserId})", existing.UserId.Value);
             return InvalidRefresh();
         }
 
@@ -202,9 +242,9 @@ public static class AuthEndpoints
         await db.SaveChangesAsync(ct);
 
         var access = jwt.IssueAccessToken(user.Id, existing.TenantId, user.Email, user.Role);
+        SetRefreshCookie(httpContext, newToken, jwtOptions.Value);
         return Results.Ok(new AuthResponse(
             access.Token,
-            newToken,
             access.ExpiresInSeconds,
             user.Id.Value,
             existing.TenantId.Value,
@@ -213,31 +253,30 @@ public static class AuthEndpoints
     }
 
     private static async Task<IResult> LogoutAsync(
-        [FromBody] LogoutRequest request,
-        IValidator<LogoutRequest> validator,
         AzKotleDbContext db,
         IJwtTokenService jwt,
+        HttpContext httpContext,
         TimeProvider time,
         CancellationToken ct)
     {
-        var validation = await validator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
+        if (httpContext.Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken)
+            && !string.IsNullOrWhiteSpace(refreshToken))
         {
-            return Results.ValidationProblem(validation.ToDictionary());
+            var hash = jwt.HashRefreshToken(refreshToken);
+            var existing = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+            if (existing is not null && existing.RevokedAt is null)
+            {
+                existing.Revoke(time);
+                await db.SaveChangesAsync(ct);
+            }
         }
 
-        var hash = jwt.HashRefreshToken(request.RefreshToken);
-        var existing = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
-        if (existing is not null && existing.RevokedAt is null)
-        {
-            existing.Revoke(time);
-            await db.SaveChangesAsync(ct);
-        }
-
+        // Vždy mažeme cookie u klienta — i když token v DB nenajdem nebo cookie chyběla.
+        ClearRefreshCookie(httpContext);
         return Results.NoContent();
     }
 
-    private static async Task<AuthResponse> IssueTokensAndSaveAsync(
+    private static async Task<IssuedTokens> IssueTokensAndSaveAsync(
         AzKotleDbContext db,
         IJwtTokenService jwt,
         TenantId tenantId,
@@ -251,15 +290,39 @@ public static class AuthEndpoints
         db.RefreshTokens.Add(rt);
         await db.SaveChangesAsync(ct);
 
-        return new AuthResponse(
+        var publicResponse = new AuthResponse(
             access.Token,
-            refreshToken,
             access.ExpiresInSeconds,
             user.Id.Value,
             tenantId.Value,
             user.Email,
             user.Role.ToString());
+
+        return new IssuedTokens(publicResponse, refreshToken);
     }
+
+    private static void SetRefreshCookie(HttpContext ctx, string token, JwtOptions options)
+    {
+        ctx.Response.Cookies.Append(RefreshCookieName, token, BuildCookieOptions(TimeSpan.FromDays(options.RefreshTokenDays)));
+    }
+
+    private static void ClearRefreshCookie(HttpContext ctx)
+    {
+        // Prázdná hodnota + MaxAge=0 — prohlížeč cookie hned odstraní.
+        // Atributy musí přesně sedět s puvodním Set-Cookie (Path, SameSite, Secure, HttpOnly), jinak browser nezruší správnou cookie.
+        ctx.Response.Cookies.Append(RefreshCookieName, string.Empty, BuildCookieOptions(TimeSpan.Zero));
+    }
+
+    private static CookieOptions BuildCookieOptions(TimeSpan maxAge) => new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = RefreshCookiePath,
+        MaxAge = maxAge,
+        // Domain unset — defaultuje na request host (api.az-kotle.cz). Záměrně NE
+        // .az-kotle.cz, abychom nesdíleli cookie s app/admin subdoménami.
+    };
 
     private static async Task RevokeChainAsync(
         AzKotleDbContext db,
@@ -316,4 +379,10 @@ public static class AuthEndpoints
 
     private static IResult InvalidRefresh() =>
         Results.Json(new { error = "invalid_refresh_token" }, statusCode: StatusCodes.Status401Unauthorized);
+
+    /// <summary>Marker typ pro <see cref="ILogger{T}"/> kategorii v RefreshAsync.</summary>
+    internal sealed class RefreshTokenScope { }
+
+    /// <summary>Interní výsledek <see cref="IssueTokensAndSaveAsync"/> — Public jde do response body, PlainRefreshToken jde do HttpOnly cookie.</summary>
+    private sealed record IssuedTokens(AuthResponse Public, string PlainRefreshToken);
 }

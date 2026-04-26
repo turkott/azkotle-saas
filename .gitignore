@@ -482,3 +482,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# EF Core migration bundles (built ad-hoc, never commited)
+ef-migrate
+ef-migrate.exe

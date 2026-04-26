@@ -10,13 +10,15 @@ public sealed record RegisterRequest(
 
 public sealed record LoginRequest(string Email, string Password, string? TenantSlug = null);
 
-public sealed record RefreshRequest(string RefreshToken, string? TenantSlug = null);
-
-public sealed record LogoutRequest(string RefreshToken);
+/// <summary>
+/// /auth/refresh tělo — refresh token sám o sobě se posílá v HttpOnly Secure
+/// SameSite=Strict cookie (azkotle_refresh, Path=/api/v1/auth). Body slouží
+/// jen k volitelnému tenantSlug fallbacku, když není dostupný JWT ani subdoména.
+/// </summary>
+public sealed record RefreshRequest(string? TenantSlug = null);
 
 public sealed record AuthResponse(
     string AccessToken,
-    string RefreshToken,
     int ExpiresIn,
     Guid UserId,
     Guid TenantId,

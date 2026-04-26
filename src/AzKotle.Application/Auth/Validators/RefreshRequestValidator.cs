@@ -1,21 +1,19 @@
+using AzKotle.Domain.Entities.Tenants;
 using FluentValidation;
 
 namespace AzKotle.Application.Auth.Validators;
 
+/// <summary>
+/// /auth/refresh body validator — refresh token sám není v body (HttpOnly cookie),
+/// validujeme jen volitelný TenantSlug.
+/// </summary>
 public sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest>
 {
     public RefreshRequestValidator()
     {
-        RuleFor(x => x.RefreshToken)
-            .NotEmpty().WithMessage("Refresh token nesmí být prázdný.");
-    }
-}
-
-public sealed class LogoutRequestValidator : AbstractValidator<LogoutRequest>
-{
-    public LogoutRequestValidator()
-    {
-        RuleFor(x => x.RefreshToken)
-            .NotEmpty().WithMessage("Refresh token nesmí být prázdný.");
+        RuleFor(x => x.TenantSlug)
+            .MaximumLength(Tenant.SlugMaxLength)
+            .When(x => !string.IsNullOrWhiteSpace(x.TenantSlug))
+            .WithMessage($"Slug může mít max {Tenant.SlugMaxLength} znaků.");
     }
 }

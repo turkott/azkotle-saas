@@ -1,8 +1,10 @@
 namespace AzKotle.Web.Client.Auth;
 
+// Refresh token už NENÍ v AuthTokens — žije v HttpOnly Secure SameSite=Strict cookie
+// (azkotle_refresh, Path=/api/v1/auth) spravované backendem. JS k němu nemá přístup.
+// Access token zůstává v paměti (BrowserStorage) — Sprint 1 / F3 cookie cutover.
 public sealed record AuthTokens(
     string AccessToken,
-    string RefreshToken,
     DateTime AccessTokenExpiresAt,
     Guid UserId,
     Guid TenantId,
