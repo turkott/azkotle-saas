@@ -361,10 +361,15 @@
             var nextDue = _nextDueAt.HasValue ? DateOnly.FromDateTime(_nextDueAt.Value) : (DateOnly?)null;
 
             var updated = await InspectionsClient.UpdateDraftAsync(_inspection.Id,
-                new UpdateInspectionDraftRequest(json, _findings, _recommendations, nextDue));
+                new UpdateInspectionDraftRequest(json, _findings, _recommendations, nextDue, _inspection.Version));
 
             _inspection = updated;
             _saveState = SaveState.Saved;
+        }
+        catch (StaleVersionException)
+        {
+            _saveState = SaveState.Error;
+            Snackbar.Add("Revize byla mezitím změněna v jiném okně. Načtěte ji prosím znovu.", Severity.Warning);
         }
         catch (Exception ex)
         {
@@ -502,11 +507,15 @@
         try
         {
             var response = await InspectionsClient.SignAsync(_inspection.Id,
-                new SignInspectionRequest(signatureBase64));
+                new SignInspectionRequest(signatureBase64, _inspection.Version));
             _inspection = response.Inspection;
             _isReadOnly = true;
             _showSignSection = false;
             Snackbar.Add("Revize podepsána a uložena.", Severity.Success);
+        }
+        catch (StaleVersionException)
+        {
+            Snackbar.Add("Revize byla mezitím upravena v jiném okně. Načtěte ji prosím znovu před podpisem.", Severity.Warning);
         }
         catch (Exception ex)
         {

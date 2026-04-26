@@ -54,6 +54,10 @@ public sealed class InspectionsApiClient
     public async Task<InspectionDto> UpdateDraftAsync(Guid id, UpdateInspectionDraftRequest request, CancellationToken ct = default)
     {
         var resp = await _http.PutAsJsonAsync($"api/v1/inspections/{id}/draft", request, _serializerOptions, ct);
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw new StaleVersionException("Revize má novější verzi v DB.");
+        }
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<InspectionDto>(_serializerOptions, ct))!;
     }
@@ -61,6 +65,10 @@ public sealed class InspectionsApiClient
     public async Task<SignedInspectionResponse> SignAsync(Guid id, SignInspectionRequest request, CancellationToken ct = default)
     {
         var resp = await _http.PostAsJsonAsync($"api/v1/inspections/{id}/sign", request, _serializerOptions, ct);
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw new StaleVersionException("Revize má novější verzi v DB.");
+        }
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<SignedInspectionResponse>(_serializerOptions, ct))!;
     }
@@ -71,4 +79,9 @@ public sealed class InspectionsApiClient
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadAsStreamAsync(ct);
     }
+}
+
+public sealed class StaleVersionException : Exception
+{
+    public StaleVersionException(string message) : base(message) { }
 }

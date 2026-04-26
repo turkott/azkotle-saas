@@ -96,6 +96,15 @@ internal sealed class InspectionConfiguration : IEntityTypeConfiguration<Inspect
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");
 
+        // Optimistic concurrency via Postgres system column xmin (transaction id of
+        // last UPDATE). EF Core watches this on UPDATE statements and throws
+        // DbUpdateConcurrencyException when 0 rows match.
+        builder.Property(i => i.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
+
         builder.HasOne<AzKotle.Domain.Entities.Boilers.Boiler>()
             .WithMany()
             .HasForeignKey(i => i.BoilerId)

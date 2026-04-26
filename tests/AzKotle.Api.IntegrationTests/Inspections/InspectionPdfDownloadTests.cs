@@ -119,7 +119,7 @@ public sealed class InspectionPdfDownloadTests : IClassFixture<AzKotleApiFactory
         var inspection = await SeedDraftInspectionAsync(client);
         var signResp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(SignatureBase64: null));
+            new SignInspectionRequest(SignatureBase64: null, inspection.Version));
         signResp.EnsureSuccessStatusCode();
         var signed = (await signResp.Content.ReadFromJsonAsync<SignedInspectionResponse>())!;
         return signed.Inspection;
@@ -157,7 +157,8 @@ public sealed class InspectionPdfDownloadTests : IClassFixture<AzKotleApiFactory
                 "{\"co_ppm\":42,\"co2_pct\":8.5,\"flame_color\":\"Modrý ostrý\"}",
                 "Žádné závady",
                 "Příští revize do 12 měsíců",
-                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1),
+                inspection.Version));
         updateResp.EnsureSuccessStatusCode();
         return (await updateResp.Content.ReadFromJsonAsync<InspectionDto>())!;
     }

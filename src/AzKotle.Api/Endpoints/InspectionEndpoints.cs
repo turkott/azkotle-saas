@@ -66,13 +66,19 @@ public static class InspectionEndpoints
         }
 
         var result = await signService.SignAsync(
-            new InspectionId(id), actorId, ipAddress, userAgent, signatureBytes, ct);
+            new InspectionId(id), actorId, request?.Version ?? 0, ipAddress, userAgent, signatureBytes, ct);
 
         return result switch
         {
             SignInspectionResult.Success ok => Results.Ok(new SignedInspectionResponse(
                 ToDto(ok.Inspection), ok.PdfSha256)),
             SignInspectionResult.NotFound => Results.NotFound(),
+            SignInspectionResult.StaleVersion stale => Results.Conflict(new
+            {
+                error = "stale_version",
+                detail = "Revize byla mezitím změněna jiným klientem; načtěte ji znovu.",
+                currentVersion = stale.CurrentVersion,
+            }),
             SignInspectionResult.InvalidState bad => Results.BadRequest(
                 new { error = "invalid_state", detail = bad.Reason }),
             _ => Results.StatusCode(500),
@@ -244,7 +250,23 @@ public static class InspectionEndpoints
             return Results.BadRequest(new { error = "invalid_input", detail = ex.Message });
         }
 
-        await db.SaveChangesAsync(ct);
+        // Disconnected concurrency: validate against the version the client held when
+        // they computed this update, not whatever the just-loaded entity reports.
+        db.Entry(inspection).Property(i => i.Version).OriginalValue = request.Version;
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Results.Conflict(new
+            {
+                error = "stale_version",
+                detail = "Revize byla mezitím změněna jiným klientem; načtěte ji znovu.",
+            });
+        }
+
         return Results.Ok(ToDto(inspection));
     }
 
@@ -265,5 +287,5 @@ public static class InspectionEndpoints
         i.Type, i.PerformedAt, i.Status,
         i.FormDataJson, i.Findings, i.Recommendations, i.NextDueAt,
         i.PdfB2Key, i.PdfSha256, i.SignedAt,
-        i.CreatedAt, i.UpdatedAt);
+        i.CreatedAt, i.UpdatedAt, i.Version);
 }

@@ -103,7 +103,8 @@ public sealed class InspectionPreviewPdfTests : IClassFixture<AzKotleApiFactory>
                 "{\"co_ppm\":42,\"co2_pct\":8.5,\"flame_color\":\"Modrý ostrý\",\"main_valve_accessible\":true}",
                 "Žádné závady",
                 "Příští revize do 12 měsíců",
-                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1),
+                inspection.Version));
         updateResp.EnsureSuccessStatusCode();
         return (await updateResp.Content.ReadFromJsonAsync<InspectionDto>())!;
     }

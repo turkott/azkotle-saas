@@ -46,7 +46,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
 
         var resp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(SignatureBase64: null));
+            new SignInspectionRequest(SignatureBase64: null, inspection.Version));
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await resp.Content.ReadFromJsonAsync<SignedInspectionResponse>();
@@ -76,7 +76,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
 
         var resp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(null));
+            new SignInspectionRequest(null, inspection.Version));
         resp.EnsureSuccessStatusCode();
 
         await using var db = _factory.CreateAdminDbContext();
@@ -91,18 +91,20 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
     }
 
     [Fact]
-    public async Task Sign_Twice_Returns_400()
+    public async Task Sign_Twice_StaleVersion_Returns_409()
     {
         using var client = ClientFor();
         var inspection = await SeedInspectionAsync(client);
 
         var first = await client.PostAsJsonAsync(
-            $"/api/v1/inspections/{inspection.Id}/sign", new SignInspectionRequest(null));
+            $"/api/v1/inspections/{inspection.Id}/sign", new SignInspectionRequest(null, inspection.Version));
         first.EnsureSuccessStatusCode();
 
+        // Second call uses the OLD pre-sign version → stale → 409 (version check
+        // fires before state-machine check).
         var second = await client.PostAsJsonAsync(
-            $"/api/v1/inspections/{inspection.Id}/sign", new SignInspectionRequest(null));
-        second.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            $"/api/v1/inspections/{inspection.Id}/sign", new SignInspectionRequest(null, inspection.Version));
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]
@@ -111,7 +113,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
         using var client = ClientFor();
         var resp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{Guid.NewGuid()}/sign",
-            new SignInspectionRequest(null));
+            new SignInspectionRequest(null, 0));
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -125,7 +127,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
 
         var resp = await clientB.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(null));
+            new SignInspectionRequest(null, inspection.Version));
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -137,7 +139,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
 
         var resp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(SignatureBase64: "not_base_64!!!"));
+            new SignInspectionRequest(SignatureBase64: "not_base_64!!!", inspection.Version));
         resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -149,7 +151,7 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
 
         var resp = await client.PostAsJsonAsync(
             $"/api/v1/inspections/{inspection.Id}/sign",
-            new SignInspectionRequest(null));
+            new SignInspectionRequest(null, inspection.Version));
         resp.EnsureSuccessStatusCode();
         var body = (await resp.Content.ReadFromJsonAsync<SignedInspectionResponse>())!;
 
@@ -186,7 +188,8 @@ public sealed class SignInspectionTests : IClassFixture<AzKotleApiFactory>
                 "{\"co_ppm\":42,\"co2_pct\":8.5,\"flame_color\":\"Modrý ostrý\"}",
                 "Žádné závady",
                 "Příští revize do 12 měsíců",
-                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+                DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1),
+                inspection.Version));
         updateResp.EnsureSuccessStatusCode();
         return (await updateResp.Content.ReadFromJsonAsync<InspectionDto>())!;
     }

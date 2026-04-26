@@ -11,9 +11,10 @@ public sealed record UpdateInspectionDraftRequest(
     string FormDataJson,
     string? Findings,
     string? Recommendations,
-    DateOnly? NextDueAt);
+    DateOnly? NextDueAt,
+    uint Version);
 
-public sealed record SignInspectionRequest(string? SignatureBase64);
+public sealed record SignInspectionRequest(string? SignatureBase64, uint Version);
 
 public sealed record SignedInspectionResponse(
     InspectionDto Inspection,
@@ -34,4 +35,5 @@ public sealed record InspectionDto(
     string? PdfSha256,
     DateTime? SignedAt,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt,
+    uint Version);

@@ -27,6 +27,13 @@ public sealed class Inspection : DomainEntity
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// Optimistic concurrency token. Mapped to Postgres system column <c>xmin</c>
+    /// in Infrastructure; bumps on every UPDATE. Send back from API so clients
+    /// can attach it to the next mutating request and receive 409 on stale state.
+    /// </summary>
+    public uint Version { get; private set; }
+
     private Inspection()
     {
         // EF Core

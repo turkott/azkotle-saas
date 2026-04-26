@@ -53,7 +53,8 @@ public sealed class InspectionEndpointsTests : IClassFixture<AzKotleApiFactory>
                 FormDataJson: "{\"co_ppm\":42,\"flue_drag_pa\":12}",
                 Findings: "Doporučujeme očistit hořák",
                 Recommendations: "Příští revize do roka",
-                NextDueAt: DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1)));
+                NextDueAt: DateOnly.FromDateTime(DateTime.UtcNow).AddYears(1),
+                Version: inspection.Version));
         updateResp.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await updateResp.Content.ReadFromJsonAsync<InspectionDto>();
         updated!.FormDataJson.Should().Contain("co_ppm");
@@ -95,7 +96,7 @@ public sealed class InspectionEndpointsTests : IClassFixture<AzKotleApiFactory>
         crossGet.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var crossUpdate = await clientB.PutAsJsonAsync($"/api/v1/inspections/{inspection.Id}/draft",
-            new UpdateInspectionDraftRequest("{}", null, null, null));
+            new UpdateInspectionDraftRequest("{}", null, null, null, 0));
         crossUpdate.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
