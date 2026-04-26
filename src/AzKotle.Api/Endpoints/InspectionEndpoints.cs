@@ -147,13 +147,16 @@ public static class InspectionEndpoints
         {
             query = query.Where(i => i.Status == status.Value);
         }
-        if (CursorPagination.TryDecode(cursor, out var ca))
+        if (CursorPagination.TryDecode(cursor, out var ca, out var cId))
         {
-            query = query.Where(i => i.CreatedAt < ca);
+            var cursorIid = new InspectionId(cId);
+            query = query.Where(i =>
+                i.CreatedAt < ca || (i.CreatedAt == ca && i.Id < cursorIid));
         }
 
         var rows = await query
             .OrderByDescending(i => i.CreatedAt)
+            .ThenByDescending(i => i.Id)
             .Take(size + 1)
             .ToListAsync(ct);
 
@@ -161,7 +164,7 @@ public static class InspectionEndpoints
         if (rows.Count > size)
         {
             var pivot = rows[size - 1];
-            nextCursor = CursorPagination.Encode(pivot.CreatedAt);
+            nextCursor = CursorPagination.Encode(pivot.CreatedAt, pivot.Id.Value);
             rows.RemoveAt(rows.Count - 1);
         }
 

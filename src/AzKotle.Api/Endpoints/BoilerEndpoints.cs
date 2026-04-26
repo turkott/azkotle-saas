@@ -56,13 +56,16 @@ public static class BoilerEndpoints
                 || EF.Functions.ILike(b.QrCode, pattern));
         }
 
-        if (CursorPagination.TryDecode(cursor, out var ca))
+        if (CursorPagination.TryDecode(cursor, out var ca, out var cId))
         {
-            query = query.Where(b => b.CreatedAt < ca);
+            var cursorBid = new BoilerId(cId);
+            query = query.Where(b =>
+                b.CreatedAt < ca || (b.CreatedAt == ca && b.Id < cursorBid));
         }
 
         var rows = await query
             .OrderByDescending(b => b.CreatedAt)
+            .ThenByDescending(b => b.Id)
             .Take(size + 1)
             .ToListAsync(ct);
 
@@ -70,7 +73,7 @@ public static class BoilerEndpoints
         if (rows.Count > size)
         {
             var pivot = rows[size - 1];
-            nextCursor = CursorPagination.Encode(pivot.CreatedAt);
+            nextCursor = CursorPagination.Encode(pivot.CreatedAt, pivot.Id.Value);
             rows.RemoveAt(rows.Count - 1);
         }
 

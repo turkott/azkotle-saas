@@ -51,13 +51,16 @@ public static class CustomerEndpoints
             query = query.Where(c => c.Type == type.Value);
         }
 
-        if (CursorPagination.TryDecode(cursor, out var ca))
+        if (CursorPagination.TryDecode(cursor, out var ca, out var cId))
         {
-            query = query.Where(c => c.CreatedAt < ca);
+            var cursorCid = new CustomerId(cId);
+            query = query.Where(c =>
+                c.CreatedAt < ca || (c.CreatedAt == ca && c.Id < cursorCid));
         }
 
         var rows = await query
             .OrderByDescending(c => c.CreatedAt)
+            .ThenByDescending(c => c.Id)
             .Take(size + 1)
             .ToListAsync(ct);
 
@@ -65,7 +68,7 @@ public static class CustomerEndpoints
         if (rows.Count > size)
         {
             var pivot = rows[size - 1];
-            nextCursor = CursorPagination.Encode(pivot.CreatedAt);
+            nextCursor = CursorPagination.Encode(pivot.CreatedAt, pivot.Id.Value);
             rows.RemoveAt(rows.Count - 1);
         }
 

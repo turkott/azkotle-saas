@@ -50,13 +50,16 @@ public static class LocationEndpoints
                 || EF.Functions.ILike(l.Zip, pattern));
         }
 
-        if (CursorPagination.TryDecode(cursor, out var ca))
+        if (CursorPagination.TryDecode(cursor, out var ca, out var cId))
         {
-            query = query.Where(l => l.CreatedAt < ca);
+            var cursorLid = new LocationId(cId);
+            query = query.Where(l =>
+                l.CreatedAt < ca || (l.CreatedAt == ca && l.Id < cursorLid));
         }
 
         var rows = await query
             .OrderByDescending(l => l.CreatedAt)
+            .ThenByDescending(l => l.Id)
             .Take(size + 1)
             .ToListAsync(ct);
 
@@ -64,7 +67,7 @@ public static class LocationEndpoints
         if (rows.Count > size)
         {
             var pivot = rows[size - 1];
-            nextCursor = CursorPagination.Encode(pivot.CreatedAt);
+            nextCursor = CursorPagination.Encode(pivot.CreatedAt, pivot.Id.Value);
             rows.RemoveAt(rows.Count - 1);
         }
 
