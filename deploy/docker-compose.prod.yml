@@ -25,8 +25,15 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      # Heslo pro non-superuser runtime roli azkotle_app, vytvořenou
+      # init scriptem postgres/init/01-create-app-role.sh.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Mount init scriptů — Docker postgres image je spustí JEN při prvním
+      # vytvoření datového adresáře. Pro existující volume použij ručně:
+      #   deploy/postgres/apply-app-role.sh
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -71,7 +78,11 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__AzKotleDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Pooling=true;Maximum Pool Size=20"
+      # Runtime: API se připojuje jako non-superuser azkotle_app (NOSUPERUSER
+      # NOBYPASSRLS) — bez toho by superuser tichá obcházel celou tenant_isolation
+      # RLS politiku. Migrace se NESPOUŠTÍ z runtime kontejneru — viz
+      # deploy/postgres/README.md (musí běžet jako ${POSTGRES_USER}).
+      ConnectionStrings__AzKotleDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER:-azkotle_app};Password=${APP_DB_PASSWORD};Pooling=true;Maximum Pool Size=20"
       Jwt__Issuer: "https://api.az-kotle.cz"
       Jwt__Audience: "azkotle-api"
       Jwt__Secret: ${AZKOTLE_JWT_SECRET:?AZKOTLE_JWT_SECRET must be set (>= 32 chars)}

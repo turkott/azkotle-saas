@@ -52,10 +52,20 @@ if [[ ! -f .env.prod ]]; then
     echo "===================================================================="
     echo "  Vytvořen ${REPO_DIR}/deploy/.env.prod ze šablony."
     echo "  PŘED prvním 'docker compose up' edituj a vyplň skutečné secrets:"
-    echo "    POSTGRES_PASSWORD, AZKOTLE_JWT_SECRET, STORAGE_*, SEQ_*"
+    echo "    POSTGRES_PASSWORD, APP_DB_PASSWORD, AZKOTLE_JWT_SECRET,"
+    echo "    STORAGE_*, SEQ_*"
+    echo
+    echo "  Generuj silná hesla:"
+    echo "    openssl rand -base64 32"
+    echo
     echo "  Pak spusť:"
     echo "    cd ${REPO_DIR}/deploy"
     echo "    docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+    echo
+    echo "  Pro EXISTUJÍCÍ postgres volume (init scripty se nespustí):"
+    echo "    ./postgres/apply-app-role.sh"
+    echo "    docker compose ... up -d --force-recreate api"
+    echo "  Detail: deploy/postgres/README.md"
     echo "===================================================================="
 else
     echo "[bootstrap] .env.prod už existuje, neměním."
