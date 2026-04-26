@@ -89,12 +89,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 const string CorsPolicy = "AzKotleCors";
+var isDevelopment = builder.Environment.IsDevelopment();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(CorsPolicy, policy =>
     {
         var configured = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-            ?? new[] { "http://localhost:5100", "https://localhost:5101" };
+            ?? Array.Empty<string>();
 
         policy.SetIsOriginAllowed(origin =>
             {
@@ -102,12 +103,15 @@ builder.Services.AddCors(options =>
                     return false;
                 if (configured.Contains(origin, StringComparer.OrdinalIgnoreCase))
                     return true;
+                if (!isDevelopment)
+                    return false;
+
+                // Development-only: povolit localhost / 127.0.0.1 na libovolném portu/schématu.
                 try
                 {
                     var host = new Uri(origin).Host;
-                    return host.EndsWith(".az-kotle.cz", StringComparison.OrdinalIgnoreCase)
-                        || host.Equals("az-kotle.cz", StringComparison.OrdinalIgnoreCase)
-                        || host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+                    return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                        || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
                 }
                 catch (UriFormatException)
                 {
