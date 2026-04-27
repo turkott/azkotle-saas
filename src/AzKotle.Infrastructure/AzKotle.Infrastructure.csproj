@@ -32,6 +32,7 @@
     <PackageReference Include="QuestPDF" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="Polly" />
+    <PackageReference Include="MailKit" />
   </ItemGroup>
 
 </Project>

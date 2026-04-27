@@ -30,3 +30,27 @@ public sealed class AppOptions
     /// </summary>
     public string BaseUrl { get; set; } = string.Empty;
 }
+
+public sealed class SmtpOptions
+{
+    public const string SectionName = "Smtp";
+
+    /// <summary>SMTP server hostname (např. smtp.forpsi.com).</summary>
+    public string Host { get; set; } = string.Empty;
+
+    /// <summary>SMTP port. 465 = implicit SSL, 587 = STARTTLS, 25 = plain (nikdy v prod).</summary>
+    public int Port { get; set; } = 465;
+
+    /// <summary>SMTP username (typicky plná email adresa, např. noreply@az-kotle.cz).</summary>
+    public string User { get; set; } = string.Empty;
+
+    /// <summary>SMTP heslo. Drží se jen v env varu, nikdy v gitu.</summary>
+    public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True = implicit SSL/TLS (port 465), false = STARTTLS (port 587). Plain text
+    /// SMTP v produkci je out of question — bez TLS se i hashed credentials posílají
+    /// vidět.
+    /// </summary>
+    public bool UseSsl { get; set; } = true;
+}

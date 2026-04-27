@@ -121,13 +121,22 @@ services:
       Cors__AllowedOrigins__0: "https://app.az-kotle.cz"
       Cors__AllowedOrigins__1: "https://az-kotle.cz"
       Cors__AllowedOrigins__2: "https://www.az-kotle.cz"
-      # Email provider (Resend) — API key drží jen .env.prod, nikdy v gitu.
-      # Pokud ${RESEND_API_KEY} chybí, ResendEmailSender hodí výjimku v okamžiku
-      # send (zachycena ve forgot-password endpointu, jen logováno; uživatel
-      # dostane standardní 204).
-      Resend__ApiKey: ${RESEND_API_KEY:-}
+      # Email provider — Mail__Provider rozhoduje (smtp | resend). Default smtp
+      # (Forpsi mailbox přes MailKit, žádný cloud klíč). Resend je alternativa
+      # pro cloud-based deploy, vyžaduje RESEND_API_KEY z dashboardu.
+      Mail__Provider: ${MAIL_PROVIDER:-smtp}
       Mail__From: ${MAIL_FROM:-noreply@az-kotle.cz}
       App__BaseUrl: ${APP_BASE_URL:-https://www.az-kotle.cz}
+      # SMTP credentials — heslo drží jen .env.prod, nikdy v gitu. Pokud chybí,
+      # SmtpEmailSender hodí výjimku v okamžiku send (zachycena ve forgot-password
+      # endpointu, jen logováno; uživatel dostane standardní 204).
+      Smtp__Host: ${SMTP_HOST:-smtp.forpsi.com}
+      Smtp__Port: ${SMTP_PORT:-465}
+      Smtp__User: ${SMTP_USER:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__UseSsl: ${SMTP_USE_SSL:-true}
+      # Resend (alternativa, jen pokud MAIL_PROVIDER=resend)
+      Resend__ApiKey: ${RESEND_API_KEY:-}
       Serilog__Seq__ServerUrl: "http://seq:80"
       Serilog__Seq__ApiKey: ${SEQ_API_KEY:-}
     networks: [internal]

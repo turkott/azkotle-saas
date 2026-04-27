@@ -95,13 +95,25 @@ builder.Services.AddHttpClient<IAresClient, AresClient>(client =>
 });
 
 builder.Services.Configure<MailOptions>(builder.Configuration.GetSection(MailOptions.SectionName));
-builder.Services.Configure<ResendOptions>(builder.Configuration.GetSection(ResendOptions.SectionName));
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
-builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
+
+// Email provider switch — Mail:Provider rozhoduje, který IEmailSender se zaregistruje.
+// Default "smtp" (Forpsi mailbox). Lze přepnout na "resend" pro cloud SaaS provider.
+var mailProvider = (builder.Configuration["Mail:Provider"] ?? "smtp").Trim().ToLowerInvariant();
+if (mailProvider == "resend")
 {
-    client.BaseAddress = new Uri("https://api.resend.com/");
-    client.Timeout = TimeSpan.FromSeconds(10);
-});
+    builder.Services.Configure<ResendOptions>(builder.Configuration.GetSection(ResendOptions.SectionName));
+    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
+    {
+        client.BaseAddress = new Uri("https://api.resend.com/");
+        client.Timeout = TimeSpan.FromSeconds(10);
+    });
+}
+else
+{
+    builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+    builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+}
 
 builder.Services.AddValidatorsFromAssemblyContaining<AzKotle.Application.Auth.Validators.RegisterRequestValidator>();
 

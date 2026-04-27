@@ -34,6 +34,10 @@
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Email (SMTP)">
+    <PackageVersion Include="MailKit" Version="4.16.0" />
+  </ItemGroup>
+
   <ItemGroup Label="PDF + QR">
     <PackageVersion Include="QuestPDF" Version="2025.12.0" />
     <PackageVersion Include="QRCoder" Version="1.6.0" />
