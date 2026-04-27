@@ -48,6 +48,19 @@ builder.Services.AddHttpClient<InspectionsApiClient>(client => client.BaseAddres
 builder.Services.AddHttpClient<TenantBrandingApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
     .AddHttpMessageHandler<BrowserCredentialsHandler>()
     .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<TeamApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<BrowserCredentialsHandler>()
+    .AddHttpMessageHandler<JwtAuthHandler>();
+builder.Services.AddHttpClient<DashboardApiClient>(client => client.BaseAddress = new Uri(apiBaseAddress))
+    .AddHttpMessageHandler<BrowserCredentialsHandler>()
+    .AddHttpMessageHandler<JwtAuthHandler>();
+
+// Public viewer (F14) — anonymní endpoint, žádné Bearer ani cookies. Cross-origin
+// browser fetch defaultně omits credentials, což je přesně co chceme: zákazník
+// otevře link bez session a server nesmí mu vrátit cookie z případně přihlášené
+// session jiného tenantu.
+builder.Services.AddHttpClient<PublicInspectionApiClient>(client =>
+    client.BaseAddress = new Uri(apiBaseAddress));
 
 builder.Services.AddHttpClient<InspectionSchemaClient>(client =>
 {

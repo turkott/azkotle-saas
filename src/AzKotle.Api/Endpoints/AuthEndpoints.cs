@@ -1,7 +1,10 @@
+using System.Globalization;
+using System.Text;
 using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
 using AzKotle.Application.Auth;
 using AzKotle.Domain.Common;
+using AzKotle.Domain.Entities.Audit;
 using AzKotle.Domain.Entities.Auth;
 using AzKotle.Domain.Entities.Tenants;
 using AzKotle.Domain.Entities.Users;
@@ -81,17 +84,46 @@ public static class AuthEndpoints
             return Results.ValidationProblem(validation.ToDictionary());
         }
 
-        var slugTaken = await db.Tenants
-            .AsNoTracking()
-            .AnyAsync(t => t.Slug == request.TenantSlug, ct);
-        if (slugTaken)
+        // ICO uniqueness: pre-check protože unique violation v DB by trigger jen
+        // generic catch a server by mis-categorizoval jako email_taken. Race window
+        // mezi check a insert je akceptovatelný (jeden user musí retry).
+        if (!string.IsNullOrWhiteSpace(request.Ico))
         {
-            return Results.Conflict(new { error = "slug_taken" });
+            var icoTaken = await db.Tenants.AsNoTracking()
+                .AnyAsync(t => t.Ico == request.Ico, ct);
+            if (icoTaken)
+            {
+                return Results.Conflict(new { error = "ico_taken" });
+            }
+        }
+
+        // Slug resolution: explicit > auto-generated z CompanyName. Auto-gen ASCII
+        // foldne diakritiku, lowercase, nahradí non-alnum pomlčkou. Při kolizi přidá
+        // 6-char random suffix a retryuje (max 5×).
+        string slug;
+        if (!string.IsNullOrWhiteSpace(request.TenantSlug))
+        {
+            var slugTaken = await db.Tenants.AsNoTracking()
+                .AnyAsync(t => t.Slug == request.TenantSlug, ct);
+            if (slugTaken)
+            {
+                return Results.Conflict(new { error = "slug_taken" });
+            }
+            slug = request.TenantSlug;
+        }
+        else
+        {
+            var resolved = await ResolveAutoSlugAsync(db, request.CompanyName, ct);
+            if (resolved is null)
+            {
+                return Results.Conflict(new { error = "slug_unavailable" });
+            }
+            slug = resolved;
         }
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var tenant = Tenant.Create(request.TenantSlug, request.CompanyName, request.Ico, time);
+        var tenant = Tenant.Create(slug, request.CompanyName, request.Ico, time);
         db.Tenants.Add(tenant);
         await db.SaveChangesAsync(ct);
 
@@ -112,6 +144,29 @@ public static class AuthEndpoints
             return Results.Conflict(new { error = "email_taken" });
         }
 
+        // F20 audit trail: tenant.registered + user.registered. Píšeme uvnitř
+        // transakce — když cokoli selže před tx.CommitAsync, audit log se taky
+        // rollbackne (žádný dangling entry pro neexistující tenant).
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        var tenantMeta = $$"""{"slug":"{{tenant.Slug}}","company_name":"{{JsonEscape(tenant.CompanyName)}}","ico":{{(tenant.Ico is null ? "null" : $"\"{tenant.Ico}\"")}}}""";
+        db.AuditLog.Add(AuditLog.Record(
+            tenant.Id, user.Id,
+            "tenant.registered", "tenant", tenant.Id.Value,
+            ipAddress, userAgent, tenantMeta, time));
+
+        var userMeta = $$"""{"email":"{{JsonEscape(user.Email)}}","full_name":"{{JsonEscape(user.FullName)}}","role":"{{user.Role}}"}""";
+        db.AuditLog.Add(AuditLog.Record(
+            tenant.Id, user.Id,
+            "user.registered", "user", user.Id.Value,
+            ipAddress, userAgent, userMeta, time));
+        await db.SaveChangesAsync(ct);
+
         var issued = await IssueTokensAndSaveAsync(db, jwt, tenant.Id, user, time, ct);
         await tx.CommitAsync(ct);
 
@@ -120,6 +175,57 @@ public static class AuthEndpoints
         SetRefreshCookie(httpContext, issued.PlainRefreshToken, jwtOptions.Value);
         return Results.Ok(issued.Public);
     }
+
+    private static async Task<string?> ResolveAutoSlugAsync(
+        AzKotleDbContext db, string companyName, CancellationToken ct)
+    {
+        var basis = SlugifyCompanyName(companyName);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var candidate = attempt == 0
+                ? basis
+                : $"{basis[..Math.Min(basis.Length, Tenant.SlugMaxLength - 7)]}-{Guid.NewGuid().ToString("N")[..6]}";
+            var taken = await db.Tenants.AsNoTracking().AnyAsync(t => t.Slug == candidate, ct);
+            if (!taken)
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static string SlugifyCompanyName(string companyName)
+    {
+        // ASCII fold (Czech "Žluťoučký" → "Zlutoucky"), pak lowercase + non-alnum → "-".
+        var normalized = companyName.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category == UnicodeCategory.NonSpacingMark)
+                continue;
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(char.ToLowerInvariant(ch));
+            }
+            else if (sb.Length > 0 && sb[^1] != '-')
+            {
+                sb.Append('-');
+            }
+        }
+        var trimmed = sb.ToString().Trim('-');
+        if (trimmed.Length == 0)
+            trimmed = "firma";
+        // Min 2 znaky kvůli existujícímu slug regexu (^[a-z0-9](...)?$).
+        if (trimmed.Length == 1)
+            trimmed += "0";
+        if (trimmed.Length > Tenant.SlugMaxLength)
+            trimmed = trimmed[..Tenant.SlugMaxLength];
+        return trimmed;
+    }
+
+    private static string JsonEscape(string value) =>
+        value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private static async Task<IResult> LoginAsync(
         [FromBody] LoginRequest request,

@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Templates\nv191_2022.json" />
+    <EmbeddedResource Include="Templates\tpg704_01_service.json" />
+    <EmbeddedResource Include="Templates\emergency.json" />
   </ItemGroup>
 
   <ItemGroup>

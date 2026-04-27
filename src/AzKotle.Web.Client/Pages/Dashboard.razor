@@ -1,42 +1,285 @@
 @page "/dashboard"
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Web.Client.Api
 @using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject DashboardApiClient DashboardClient
 @inject NavigationManager Navigation
 
 <PageTitle>Nástěnka · AZ KOTLE</PageTitle>
 
 <AuthorizeView>
-    <Authorized>
-        <MudText Typo="Typo.h3" Class="mb-2">Nástěnka</MudText>
-        <MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
-            Vítej, @(context.User.FindFirst("email")?.Value ?? context.User.Identity?.Name ?? "uživateli").
-        </MudText>
-
-        <MudGrid>
-            <MudItem xs="12" md="6">
-                <MudCard>
-                    <MudCardContent>
-                        <MudText Typo="Typo.h6">Tenant</MudText>
-                        <MudText Typo="Typo.body2">@(context.User.FindFirst("tenant_id")?.Value ?? "—")</MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-            <MudItem xs="12" md="6">
-                <MudCard>
-                    <MudCardContent>
-                        <MudText Typo="Typo.h6">Role</MudText>
-                        <MudText Typo="Typo.body2">@(context.User.FindFirst("role")?.Value ?? "—")</MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        </MudGrid>
-
-        <MudAlert Severity="Severity.Info" Class="mt-6">
-            Toto je placeholder nástěnky. Moduly (kotle, revize, QR, zákazníci) přijdou v Fázi 2–3.
-        </MudAlert>
-    </Authorized>
     <NotAuthorized>
         <MudAlert Severity="Severity.Warning">Pro zobrazení nástěnky se přihlas.</MudAlert>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" Href="/login">Přihlásit</MudButton>
     </NotAuthorized>
+    <Authorized>
+        @{
+            var fullName = context.User.Identity?.Name ?? context.User.FindFirst("email")?.Value ?? "uživateli";
+            var isOwner = context.User.IsInRole("Owner")
+                          || context.User.FindFirst("role")?.Value == "Owner";
+        }
+
+        <MudStack Spacing="1" Class="mb-6">
+            <MudText Typo="Typo.h4">
+                Vítejte v AZ KOTLE, @fullName!
+            </MudText>
+            @if (!string.IsNullOrEmpty(_summary?.CompanyName))
+            {
+                <MudText Typo="Typo.body1" Color="Color.Secondary">
+                    Vaše firma <strong>@_summary.CompanyName</strong> je připravena.
+                </MudText>
+            }
+            else if (_loading)
+            {
+                <MudText Typo="Typo.body1" Color="Color.Secondary">Načítám přehled…</MudText>
+            }
+        </MudStack>
+
+        @* First-login welcome banner — viditelné jen když fresh tenant nemá ani jednu
+           revizi. Po vystavení první revize banner zmizí (TotalInspections > 0). *@
+        @if (_summary is { TotalInspections: 0 })
+        {
+            <MudCard Outlined Class="mb-6" Style="border-color: var(--mud-palette-primary); border-width: 2px;">
+                <MudCardContent>
+                    <MudStack Spacing="2">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6">Vítejte v AZ KOTLE!</MudText>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Začněte přidáním prvního zákazníka a jeho kotle, abyste mohli vystavit svou první revizi.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Href="/customers"
+                                   Class="align-self-start">
+                            Přidat prvního zákazníka
+                        </MudButton>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        }
+
+        @* Stat tiles *@
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="4">
+                <MudPaper Elevation="0" Outlined Class="pa-4">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Color="Color.Primary" Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.h4">@StatValue(_summary?.TotalInspections)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Revizí celkem</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Elevation="0" Outlined Class="pa-4">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.h4">@StatValue(_summary?.TotalSignedInspections)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Podepsaných</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Elevation="0" Outlined Class="pa-4">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Groups" Color="Color.Info" Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.h4">@StatValue(_summary?.TotalActiveTechnicians)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Aktivních techniků</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Quick links *@
+        <MudText Typo="Typo.h6" Class="mb-3">Rychlé akce</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <QuickLinkCard Icon="@Icons.Material.Filled.LocalFireDepartment"
+                               Title="Kotle a revize"
+                               Description="Spravujte kotle, vystavte novou revizi nebo servisní list."
+                               Href="/boilers" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <QuickLinkCard Icon="@Icons.Material.Filled.People"
+                               Title="Zákazníci"
+                               Description="Adresář zákazníků s dohledáním v ARES."
+                               Href="/customers" />
+            </MudItem>
+            @if (isOwner)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <QuickLinkCard Icon="@Icons.Material.Filled.Groups"
+                                   Title="Můj tým"
+                                   Description="Pozvěte techniky a spravujte přístupy."
+                                   Href="/team" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <QuickLinkCard Icon="@Icons.Material.Filled.Image"
+                                   Title="Branding"
+                                   Description="Logo firmy v hlavičce každé revizní zprávy."
+                                   Href="/settings/branding" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        @* Upcoming expirations (F21) *@
+        <MudText Typo="Typo.h6" Class="mb-3 mt-6">Blížící se revize (30 dní)</MudText>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate Size="Size.Small" />
+        }
+        else if (_expirations.Count == 0)
+        {
+            <MudPaper Elevation="0" Outlined Class="pa-6" Style="text-align: center;">
+                <MudStack Spacing="2" AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+                    <MudText Typo="Typo.h6">Žádné revize v nejbližší době nekončí. Skvělá práce!</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Začněte přidáním nového zákazníka — pak založíte kotel a vystavíte revizi.
+                    </MudText>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               Href="/customers"
+                               Class="mt-2">
+                        Přidat zákazníka
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+        else
+        {
+            @* OnRowClick + RowStyle="cursor:pointer" — mobilní palec se trefí celého řádku
+               místo do 80px tlačítka. Pokud do řádku přibude jakýkoli interaktivní prvek
+               (button, link), MUSÍ použít @onclick:stopPropagation, jinak click probublá
+               na řádek a navigation přepíše akci. *@
+            <MudTable Items="_expirations"
+                      Dense Hover Bordered="false"
+                      Class="mud-elevation-1"
+                      OnRowClick="OnExpirationRowClicked"
+                      RowStyle="cursor: pointer;"
+                      T="UpcomingExpirationDto">
+                <HeaderContent>
+                    <MudTh></MudTh>
+                    <MudTh>Termín</MudTh>
+                    <MudTh>Stav</MudTh>
+                    <MudTh>Zákazník</MudTh>
+                    <MudTh Class="d-none d-md-table-cell">Kotel</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="row">
+                    <MudTd Style="width: 32px;">
+                        <MudIcon Icon="@StatusIcon(row.DaysRemaining)"
+                                 Color="@StatusColorOf(row.DaysRemaining)"
+                                 Size="Size.Small" />
+                    </MudTd>
+                    <MudTd DataLabel="Termín">
+                        <strong>@row.NextDueAt.ToString("dd.MM.yyyy")</strong>
+                    </MudTd>
+                    <MudTd DataLabel="Stav">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@StatusColorOf(row.DaysRemaining)"
+                                 Variant="Variant.Outlined">
+                            @StatusLabel(row.DaysRemaining)
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Zákazník">@row.CustomerName</MudTd>
+                    <MudTd DataLabel="Kotel" Class="d-none d-md-table-cell">@row.BoilerName</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </Authorized>
 </AuthorizeView>
+
+@code {
+    private DashboardSummaryDto? _summary;
+    private List<UpcomingExpirationDto> _expirations = new();
+    private bool _loading = true;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            _loading = false;
+            return;
+        }
+
+        // Paralelně — summary + expirations jsou nezávislé endpointy. Spustíme
+        // oba současně a počkáme na oba; nezávislé try/catch znamená, že selhání
+        // jednoho nepotopí druhý (stats / expirations jsou nice-to-have, žádný
+        // by neměl rozbít celou stránku).
+        var summaryTask = LoadSummaryAsync();
+        var expirationsTask = LoadExpirationsAsync();
+        await Task.WhenAll(summaryTask, expirationsTask);
+        _summary = summaryTask.Result;
+        _expirations = expirationsTask.Result;
+
+        _loading = false;
+    }
+
+    private async Task<DashboardSummaryDto?> LoadSummaryAsync()
+    {
+        try { return await DashboardClient.GetSummaryAsync(); }
+        catch { return null; }
+    }
+
+    private async Task<List<UpcomingExpirationDto>> LoadExpirationsAsync()
+    {
+        try
+        {
+            var data = await DashboardClient.GetExpirationsAsync();
+            return data.ToList();
+        }
+        catch
+        {
+            return new List<UpcomingExpirationDto>();
+        }
+    }
+
+    private static string StatValue(int? value) => value?.ToString() ?? "—";
+
+    private void OnExpirationRowClicked(TableRowClickEventArgs<UpcomingExpirationDto> args)
+    {
+        if (args.Item is null) return;
+        Navigation.NavigateTo($"/boilers/{args.Item.BoilerId}");
+    }
+
+    private static Color StatusColorOf(int daysRemaining) => daysRemaining switch
+    {
+        < 0 => Color.Error,
+        < 7 => Color.Warning,
+        _ => Color.Default,
+    };
+
+    private static string StatusIcon(int daysRemaining) => daysRemaining switch
+    {
+        < 0 => Icons.Material.Filled.ErrorOutline,
+        < 7 => Icons.Material.Filled.Schedule,
+        _ => Icons.Material.Filled.Event,
+    };
+
+    private static string StatusLabel(int daysRemaining)
+    {
+        if (daysRemaining < 0)
+        {
+            var overdueDays = -daysRemaining;
+            return overdueDays == 1 ? "Po termínu (1 den)" : $"Po termínu ({overdueDays} dní)";
+        }
+        if (daysRemaining == 0) return "Dnes";
+        if (daysRemaining == 1) return "Zítra";
+        return $"Za {daysRemaining} dní";
+    }
+}

@@ -255,7 +255,7 @@ public sealed class AuthenticationTests : IClassFixture<AzKotleApiFactory>
         HttpClient client,
         HttpMethod method,
         string path,
-        string tenantSlug,
+        string? tenantSlug,
         T body,
         string? cookie = null)
     {
@@ -263,7 +263,10 @@ public sealed class AuthenticationTests : IClassFixture<AzKotleApiFactory>
         {
             Content = JsonContent.Create(body),
         };
-        request.Headers.Host = $"{tenantSlug}.az-kotle.cz";
+        if (!string.IsNullOrWhiteSpace(tenantSlug))
+        {
+            request.Headers.Host = $"{tenantSlug}.az-kotle.cz";
+        }
         if (!string.IsNullOrEmpty(cookie))
         {
             request.Headers.Add("Cookie", $"{RefreshCookieName}={cookie}");

@@ -36,6 +36,7 @@ public static class InspectionFieldTypes
     public const string Select = "select";
     public const string Boolean = "boolean";
     public const string Date = "date";
+    public const string Text = "text";
     public const string Textarea = "textarea";
     public const string Photo = "photo";
     public const string Signature = "signature";

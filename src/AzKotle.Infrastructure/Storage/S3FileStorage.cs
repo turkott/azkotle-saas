@@ -143,6 +143,22 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         return new string(buffer[..written]);
     }
 
+    public async Task<bool> HeadBucketAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _client.HeadBucketAsync(new HeadBucketRequest { BucketName = _options.Bucket }, cancellationToken);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Readiness probe — log and return false. Caller (/health/ready) decides
+            // how to render this in the JSON response body.
+            _logger.LogWarning(ex, "S3 HeadBucket probe failed for bucket {Bucket}", _options.Bucket);
+            return false;
+        }
+    }
+
     public async Task EnsureBucketExistsAsync(CancellationToken cancellationToken = default)
     {
         try

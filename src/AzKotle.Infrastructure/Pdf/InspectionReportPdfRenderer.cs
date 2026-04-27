@@ -16,6 +16,14 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
         "Mimořádná kontrola",
     };
 
+    private static readonly string[] _documentTitles =
+    {
+        "REVIZNÍ ZPRÁVA",
+        "PROTOKOL O ROČNÍ KONTROLE",
+        "SERVISNÍ LIST",
+        "PROTOKOL O MIMOŘÁDNÉ KONTROLE",
+    };
+
     public byte[] Render(InspectionReportData data)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -65,7 +73,7 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
                 });
                 row.ConstantItem(160).AlignRight().Column(right =>
                 {
-                    right.Item().Text("REVIZNÍ ZPRÁVA").Bold().FontSize(13).FontColor(Colors.Black);
+                    right.Item().Text(DocumentTitle(data.Type)).Bold().FontSize(13).FontColor(Colors.Black);
                     right.Item().Text(TypeLabel(data.Type)).FontSize(8).FontColor(Colors.Grey.Darken1);
                     right.Item().Text($"Č. {data.InspectionNumber}").FontSize(9);
                 });
@@ -153,6 +161,46 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
                     c.Item().Text("Podpis provozovatele").FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
             });
+
+            if (data.Photos is { Count: > 0 })
+            {
+                col.Item().PageBreak();
+                col.Item().Element(c => PhotoGallery(c, data.Photos));
+            }
+        });
+    }
+
+    private static void PhotoGallery(IContainer container, IReadOnlyList<InspectionPhotoData> photos)
+    {
+        container.Column(col =>
+        {
+            col.Item().Text("Obrazová příloha").Bold().FontSize(13);
+            col.Item().PaddingBottom(8).LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
+
+            col.Item().Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.RelativeColumn();
+                    c.RelativeColumn();
+                });
+
+                foreach (var photo in photos)
+                {
+                    table.Cell().Padding(4).Element(cell => PhotoTile(cell, photo));
+                }
+            });
+        });
+    }
+
+    private static void PhotoTile(IContainer container, InspectionPhotoData photo)
+    {
+        container.Border(0.5f).BorderColor(Colors.Grey.Lighten1).Padding(6).Column(col =>
+        {
+            col.Item().Height(200).AlignCenter().AlignMiddle()
+                .Image(photo.ImageBytes).FitArea();
+            col.Item().PaddingTop(4).AlignCenter()
+                .Text(photo.Label).FontSize(9).FontColor(Colors.Grey.Darken2);
         });
     }
 
@@ -227,5 +275,11 @@ public sealed class InspectionReportPdfRenderer : IInspectionReportPdfRenderer
     {
         var idx = (int)type;
         return idx >= 0 && idx < _typeLabels.Length ? _typeLabels[idx] : type.ToString();
+    }
+
+    private static string DocumentTitle(InspectionType type)
+    {
+        var idx = (int)type;
+        return idx >= 0 && idx < _documentTitles.Length ? _documentTitles[idx] : _documentTitles[0];
     }
 }

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://az-kotle.cz/schemas/inspection-form/v1.json",
+  "id": "emergency",
+  "version": "1.0.0",
+  "title": "Mimořádná kontrola",
+  "description": "Formulář pro mimořádnou (havarijní) kontrolu plynového zařízení.",
+  "sections": [
+    {
+      "id": "emergency_details",
+      "title": "Mimořádná kontrola",
+      "fields": [
+        { "id": "callout_reason", "label": "Důvod výjezdu", "type": "text", "required": true },
+        { "id": "found_state", "label": "Zjištěný stav", "type": "textarea", "required": true },
+        { "id": "safety_measures", "label": "Bezpečnostní opatření", "type": "textarea" },
+        { "id": "next_steps", "label": "Nutné následné kroky", "type": "textarea" }
+      ]
+    },
+    {
+      "id": "photos",
+      "title": "Foto dokumentace",
+      "fields": [
+        { "id": "photo_documentation", "label": "Foto dokumentace", "type": "photo" }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "Závěr",
+      "fields": [
+        { "id": "technician_signature", "label": "Podpis technika", "type": "signature", "required": true }
+      ]
+    }
+  ]
+}

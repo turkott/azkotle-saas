@@ -96,6 +96,14 @@ internal sealed class InspectionConfiguration : IEntityTypeConfiguration<Inspect
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(i => i.AccessHash)
+            .HasColumnName("access_hash")
+            .HasMaxLength(Inspection.AccessHashLength)
+            .IsRequired();
+
+        builder.HasIndex(i => i.AccessHash)
+            .IsUnique();
+
         // Optimistic concurrency via Postgres system column xmin (transaction id of
         // last UPDATE). EF Core watches this on UPDATE statements and throws
         // DbUpdateConcurrencyException when 0 rows match.

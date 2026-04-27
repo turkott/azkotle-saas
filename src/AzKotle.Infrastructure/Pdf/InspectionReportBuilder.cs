@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AzKotle.Application.Abstractions;
 using AzKotle.Application.Inspections;
 using AzKotle.Domain.Common;
@@ -14,6 +15,7 @@ public sealed class InspectionReportBuilder
     private readonly AzKotleDbContext _db;
     private readonly IInspectionReportPdfRenderer _renderer;
     private readonly FormSectionMapper _formSectionMapper;
+    private readonly IInspectionTemplateProvider _templates;
     private readonly IFileStorage _storage;
     private readonly ILogger<InspectionReportBuilder> _logger;
 
@@ -21,12 +23,14 @@ public sealed class InspectionReportBuilder
         AzKotleDbContext db,
         IInspectionReportPdfRenderer renderer,
         FormSectionMapper formSectionMapper,
+        IInspectionTemplateProvider templates,
         IFileStorage storage,
         ILogger<InspectionReportBuilder> logger)
     {
         _db = db;
         _renderer = renderer;
         _formSectionMapper = formSectionMapper;
+        _templates = templates;
         _storage = storage;
         _logger = logger;
     }
@@ -76,6 +80,7 @@ public sealed class InspectionReportBuilder
         }
 
         var logoImage = await TryFetchLogoAsync(tenant.LogoStorageKey, ct);
+        var photos = await FetchPhotosAsync(inspection.Type, inspection.FormDataJson, ct);
 
         var data = new InspectionReportData(
             InspectionNumber: ShortNumber(inspection.Id, inspection.PerformedAt),
@@ -93,7 +98,8 @@ public sealed class InspectionReportBuilder
             Findings: inspection.Findings,
             Recommendations: inspection.Recommendations,
             SignatureImage: inspection.SignatureData,
-            LogoImage: logoImage);
+            LogoImage: logoImage,
+            Photos: photos);
 
         return _renderer.Render(data);
     }
@@ -122,6 +128,107 @@ public sealed class InspectionReportBuilder
             _logger.LogWarning(ex, "Tenant logo fetch failed for key {LogoKey}; rendering without logo.", storageKey);
             return null;
         }
+    }
+
+    private async Task<IReadOnlyList<InspectionPhotoData>> FetchPhotosAsync(
+        InspectionType type, string? formDataJson, CancellationToken ct)
+    {
+        var refs = CollectPhotoRefs(type, formDataJson);
+        if (refs.Count == 0)
+        {
+            return Array.Empty<InspectionPhotoData>();
+        }
+
+        var fetches = refs.Select(r => TryFetchPhotoAsync(r.Label, r.StorageKey, ct)).ToArray();
+        var results = await Task.WhenAll(fetches);
+
+        var photos = new List<InspectionPhotoData>(results.Length);
+        foreach (var photo in results)
+        {
+            if (photo is not null)
+            {
+                photos.Add(photo);
+            }
+        }
+        return photos;
+    }
+
+    private async Task<InspectionPhotoData?> TryFetchPhotoAsync(string label, string storageKey, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = await _storage.GetAsync(storageKey, ct);
+            if (stream is null)
+            {
+                _logger.LogWarning("Inspection photo not found in storage for key {PhotoKey} (label {Label}).", storageKey, label);
+                return null;
+            }
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, ct);
+            return new InspectionPhotoData(label, ms.ToArray());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Same policy as logo: a single broken photo must not break the protocol.
+            _logger.LogWarning(ex, "Inspection photo fetch failed for key {PhotoKey} (label {Label}); skipping.", storageKey, label);
+            return null;
+        }
+    }
+
+    private List<(string Label, string StorageKey)> CollectPhotoRefs(InspectionType type, string? formDataJson)
+    {
+        var refs = new List<(string Label, string StorageKey)>();
+        if (string.IsNullOrWhiteSpace(formDataJson) || formDataJson == "{}")
+        {
+            return refs;
+        }
+        var template = _templates.GetTemplate(type);
+        if (template is null)
+        {
+            return refs;
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(formDataJson);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "FormDataJson could not be parsed for inspection type {Type}; skipping photo gallery.", type);
+            return refs;
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return refs;
+            }
+
+            foreach (var section in template.Sections)
+            {
+                foreach (var field in section.Fields)
+                {
+                    if (!string.Equals(field.Type, "photo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    if (!doc.RootElement.TryGetProperty(field.Id, out var value)
+                        || value.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+                    var key = value.GetString();
+                    if (!string.IsNullOrWhiteSpace(key))
+                    {
+                        refs.Add((field.Label, key));
+                    }
+                }
+            }
+        }
+
+        return refs;
     }
 
     public static string ShortNumber(InspectionId id, DateTime performedAt) =>

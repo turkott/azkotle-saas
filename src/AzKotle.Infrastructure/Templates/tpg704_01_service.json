@@ -1,0 +1,33 @@
+{
+  "$schema": "https://az-kotle.cz/schemas/inspection-form/v1.json",
+  "id": "tpg704_01_service",
+  "version": "1.0.0",
+  "title": "Servis plynového zařízení (TPG 704 01)",
+  "description": "Formulář pro servisní zásah na plynovém zařízení dle TPG 704 01.",
+  "sections": [
+    {
+      "id": "service_details",
+      "title": "Provedený servis",
+      "fields": [
+        { "id": "defect_description", "label": "Popis závady", "type": "text", "required": true },
+        { "id": "actions_performed", "label": "Provedené úkony", "type": "textarea", "required": true },
+        { "id": "materials_used", "label": "Spotřebovaný materiál", "type": "textarea" },
+        { "id": "post_repair_status", "label": "Stav zařízení po opravě", "type": "select", "options": ["Provozuschopné", "Omezený provoz", "Mimo provoz"], "required": true }
+      ]
+    },
+    {
+      "id": "photos",
+      "title": "Foto dokumentace",
+      "fields": [
+        { "id": "photo_documentation", "label": "Foto dokumentace", "type": "photo" }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "Závěr",
+      "fields": [
+        { "id": "technician_signature", "label": "Podpis technika", "type": "signature", "required": true }
+      ]
+    }
+  ]
+}

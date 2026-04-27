@@ -154,7 +154,9 @@ public sealed class AuthApiClient
                     "invalid_refresh_token" => "Přihlášení vypršelo.",
                     "tenant_required" => "Chybí identifikace firmy (subdoména).",
                     "email_taken" => "Email už je použitý.",
+                    "ico_taken" => "Firma s tímto IČO je už zaregistrovaná.",
                     "slug_taken" => "Identifikátor firmy už existuje.",
+                    "slug_unavailable" => "Nepodařilo se přiřadit identifikátor firmy. Zkuste prosím jiný název.",
                     _ => err.GetString() ?? body,
                 };
             }

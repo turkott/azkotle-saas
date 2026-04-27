@@ -23,11 +23,17 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
             .NotEmpty().WithMessage("Jméno nesmí být prázdné.")
             .MaximumLength(User.FullNameMaxLength).WithMessage($"Jméno může mít max {User.FullNameMaxLength} znaků.");
 
-        RuleFor(x => x.TenantSlug)
-            .NotEmpty().WithMessage("Slug nesmí být prázdný.")
-            .MaximumLength(Tenant.SlugMaxLength).WithMessage($"Slug může mít max {Tenant.SlugMaxLength} znaků.")
-            .Matches("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
-            .WithMessage("Slug musí obsahovat jen malá písmena, čísla a pomlčky.");
+        // Slug je volitelný — když chybí, server ho odvodí z CompanyName (F20:
+        // public registration "30-second signup" nemá tlačit usera na slug
+        // technicality). Když je vyplněn, musí splňovat formát.
+        When(x => !string.IsNullOrWhiteSpace(x.TenantSlug), () =>
+        {
+            RuleFor(x => x.TenantSlug!)
+                .MaximumLength(Tenant.SlugMaxLength)
+                    .WithMessage($"Slug může mít max {Tenant.SlugMaxLength} znaků.")
+                .Matches("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+                    .WithMessage("Slug musí obsahovat jen malá písmena, čísla a pomlčky.");
+        });
 
         RuleFor(x => x.CompanyName)
             .NotEmpty().WithMessage("Název firmy nesmí být prázdný.")

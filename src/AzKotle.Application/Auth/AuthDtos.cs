@@ -4,7 +4,7 @@ public sealed record RegisterRequest(
     string Email,
     string Password,
     string FullName,
-    string TenantSlug,
+    string? TenantSlug,
     string CompanyName,
     string? Ico);
 

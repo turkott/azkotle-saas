@@ -21,7 +21,12 @@ public sealed record InspectionReportData(
     string? Findings,
     string? Recommendations,
     byte[]? SignatureImage = null,
-    byte[]? LogoImage = null);
+    byte[]? LogoImage = null,
+    IReadOnlyList<InspectionPhotoData>? Photos = null);
+
+public sealed record InspectionPhotoData(
+    string Label,
+    byte[] ImageBytes);
 
 public sealed record InspectionReportTenant(
     string CompanyName,

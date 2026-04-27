@@ -14,29 +14,18 @@
     <MudPaper Elevation="2" Class="pa-6">
         <MudText Typo="Typo.h4" Class="mb-2" Align="Align.Center">Registrace firmy</MudText>
         <MudText Typo="Typo.body2" Class="mb-4" Align="Align.Center" Color="Color.Secondary">
-            Vytvoříme ti tenant + owner účet.
+            Za 30 sekund nastavíte firmu a začnete vystavovat revizní zprávy.
         </MudText>
 
         <EditForm Model="_model" OnValidSubmit="SubmitAsync">
             <DataAnnotationsValidator />
             <MudStack Spacing="3">
-                <MudTextField @bind-Value="_model.CompanyName"
-                              Label="Název firmy"
-                              Required
-                              Disabled="_busy"
-                              Variant="Variant.Outlined" />
-
-                <MudTextField @bind-Value="_model.TenantSlug"
-                              Label="Identifikátor (slug)"
-                              HelperText="Malá písmena, čísla, pomlčka. Např. acme-servis."
-                              Required
-                              Disabled="_busy"
-                              Variant="Variant.Outlined" />
-
                 <MudStack Row Spacing="2" AlignItems="AlignItems.Start">
                     <MudTextField @bind-Value="_model.Ico"
-                                  Label="IČO (volitelné)"
+                                  Label="IČO"
                                   MaxLength="8"
+                                  Required
+                                  HelperText="8 číslic — najdeme firmu v ARES."
                                   Disabled="_busy"
                                   Variant="Variant.Outlined"
                                   Class="flex-grow-1" />
@@ -55,6 +44,13 @@
                         }
                     </MudButton>
                 </MudStack>
+
+                <MudTextField @bind-Value="_model.CompanyName"
+                              Label="Název firmy"
+                              Required
+                              HelperText="Po načtení z ARES se vyplní automaticky."
+                              Disabled="_busy"
+                              Variant="Variant.Outlined" />
 
                 <MudDivider Class="my-2" />
 
@@ -152,11 +148,13 @@
 
         try
         {
+            // TenantSlug = null → server odvodí z CompanyName (F20 30-second signup).
+            // Power user může v budoucnu mít explicit slug field, MVP ne.
             var request = new RegisterRequest(
                 Email: _model.Email.Trim(),
                 Password: _model.Password,
                 FullName: _model.FullName.Trim(),
-                TenantSlug: _model.TenantSlug.Trim(),
+                TenantSlug: null,
                 CompanyName: _model.CompanyName.Trim(),
                 Ico: string.IsNullOrWhiteSpace(_model.Ico) ? null : _model.Ico.Trim());
 
@@ -168,7 +166,9 @@
             }
 
             Snackbar.Add("Registrace proběhla v pořádku.", Severity.Success);
-            Navigation.NavigateTo("/dashboard");
+            // replace:true — back button by jinak vrátil na /register se stejnými daty;
+            // další submit by failnul s email_taken a zmátl uživatele.
+            Navigation.NavigateTo("/dashboard", replace: true);
         }
         finally
         {
@@ -179,7 +179,6 @@
     private sealed class RegisterModel
     {
         public string CompanyName { get; set; } = string.Empty;
-        public string TenantSlug { get; set; } = string.Empty;
         public string? Ico { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;

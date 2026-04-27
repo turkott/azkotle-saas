@@ -1,6 +1,11 @@
 @page "/"
+@using AzKotle.Web.Client.Auth
 
 <PageTitle>AZ KOTLE</PageTitle>
+
+@* Authenticated user → redirect na /dashboard. Komponenta je client-only WASM
+   (SSR nevidí JWT), neviditelná, side-effect-only. *@
+<RedirectIfAuthenticated />
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
     <MudStack Spacing="4" AlignItems="AlignItems.Center">

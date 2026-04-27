@@ -30,7 +30,15 @@
                     <MudNavLink Href="/customers" Icon="@Icons.Material.Filled.People">Zákazníci</MudNavLink>
                     <MudNavLink Href="/locations" Icon="@Icons.Material.Filled.LocationOn">Lokality</MudNavLink>
                     <MudNavLink Href="/boilers" Icon="@Icons.Material.Filled.LocalFireDepartment">Kotle</MudNavLink>
-                    <MudNavLink Href="/settings/branding" Icon="@Icons.Material.Filled.Image">Branding</MudNavLink>
+                    @* Owner-only sekce: Branding API endpoint vrací 403 pro non-Owner
+                       (TenantBrandingEndpoints), takže nemá smysl ho techniku ukazovat
+                       v menu. Stejné gating jako "Můj tým" (F15). *@
+                    <AuthorizeView Roles="Owner" Context="ownerCtx">
+                        <Authorized>
+                            <MudNavLink Href="/team" Icon="@Icons.Material.Filled.Groups">Můj tým</MudNavLink>
+                            <MudNavLink Href="/settings/branding" Icon="@Icons.Material.Filled.Image">Branding</MudNavLink>
+                        </Authorized>
+                    </AuthorizeView>
                 </MudNavMenu>
             </MudDrawer>
         </Authorized>

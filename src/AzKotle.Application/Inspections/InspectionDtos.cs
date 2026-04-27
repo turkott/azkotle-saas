@@ -36,4 +36,5 @@ public sealed record InspectionDto(
     DateTime? SignedAt,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
-    uint Version);
+    uint Version,
+    string AccessHash);

@@ -1,0 +1,131 @@
+@page "/i/{AccessHash}"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.PublicAccess
+@using AzKotle.Web.Client.Api
+@inject PublicInspectionApiClient PublicClient
+
+<PageTitle>Revizní zpráva · AZ KOTLE</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    @if (_loading)
+    {
+        <MudPaper Elevation="0" Class="pa-8 d-flex justify-center">
+            <MudProgressCircular Indeterminate Color="Color.Primary" />
+        </MudPaper>
+    }
+    else if (_notFound)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            Tato revizní zpráva neexistuje, byla odebrána, nebo ještě nebyla podepsána.
+            Zkontrolujte odkaz, který jste obdrželi.
+        </MudAlert>
+    }
+    else if (_summary is not null)
+    {
+        <MudPaper Elevation="2" Class="pa-6">
+            <MudStack Spacing="4" AlignItems="AlignItems.Center">
+                @if (!string.IsNullOrEmpty(_summary.TenantLogoUrl))
+                {
+                    <img src="@_summary.TenantLogoUrl"
+                         alt="@_summary.TenantCompanyName"
+                         style="max-height: 80px; max-width: 240px; object-fit: contain;" />
+                }
+
+                <MudText Typo="Typo.h5" Align="Align.Center">@_summary.TenantCompanyName</MudText>
+                <MudText Typo="Typo.subtitle1" Color="Color.Secondary" Align="Align.Center">
+                    Revizní zpráva
+                </MudText>
+
+                <MudDivider Class="my-2" />
+
+                <MudGrid Spacing="2" Class="px-2">
+                    <MudItem xs="5">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Typ revize</MudText>
+                    </MudItem>
+                    <MudItem xs="7">
+                        <MudText Typo="Typo.body1">@_summary.TypeLabel</MudText>
+                    </MudItem>
+
+                    <MudItem xs="5">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Datum revize</MudText>
+                    </MudItem>
+                    <MudItem xs="7">
+                        <MudText Typo="Typo.body1">
+                            @_summary.PerformedAt.ToLocalTime().ToString("dd.MM.yyyy")
+                        </MudText>
+                    </MudItem>
+
+                    <MudItem xs="5">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Kotel</MudText>
+                    </MudItem>
+                    <MudItem xs="7">
+                        <MudText Typo="Typo.body1">
+                            @_summary.BoilerManufacturer @_summary.BoilerModel
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                @if (_summary.PdfAvailable)
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Large"
+                               StartIcon="@Icons.Material.Filled.Download"
+                               Href="@_pdfUrl"
+                               Target="_blank"
+                               FullWidth>
+                        Stáhnout PDF
+                    </MudButton>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Align="Align.Center">
+                        Odkaz na PDF je platný 5 minut. Po vypršení znovu klikněte na tlačítko.
+                    </MudText>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                        PDF zatím není k dispozici.
+                    </MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+
+        <MudText Typo="Typo.caption" Align="Align.Center" Color="Color.Secondary" Class="d-block mt-4">
+            Generováno systémem AZ KOTLE
+        </MudText>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string AccessHash { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private bool _notFound;
+    private PublicInspectionResponse? _summary;
+    private string? _pdfUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _summary = await PublicClient.GetSummaryAsync(AccessHash);
+            if (_summary is null)
+            {
+                _notFound = true;
+            }
+            else
+            {
+                _pdfUrl = PublicClient.BuildPdfDownloadUri(AccessHash).ToString();
+            }
+        }
+        catch
+        {
+            _notFound = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

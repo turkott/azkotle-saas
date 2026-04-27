@@ -1,0 +1,180 @@
+@page "/team"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using AzKotle.Application.Tenants.Team
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Authorization
+@inject TeamApiClient TeamClient
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Můj tým · AZ KOTLE</PageTitle>
+
+<AuthorizeView Roles="Owner">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Warning">
+            Tato sekce je dostupná jen pro vlastníky firmy.
+        </MudAlert>
+    </NotAuthorized>
+    <Authorized>
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Můj tým</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       OnClick="OpenCreate">
+                Přidat technika
+            </MudButton>
+        </MudStack>
+
+        <MudTable Items="_users" Loading="_loading" Dense Hover Bordered="false"
+                  Class="mud-elevation-1" LoadingProgressColor="Color.Primary">
+            <HeaderContent>
+                <MudTh>Jméno</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh>Role</MudTh>
+                <MudTh>Stav</MudTh>
+                <MudTh Style="text-align: right;">Akce</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="row">
+                <MudTd DataLabel="Jméno">@row.FullName</MudTd>
+                <MudTd DataLabel="Email">@row.Email</MudTd>
+                <MudTd DataLabel="Role">@RoleLabel(row.Role)</MudTd>
+                <MudTd DataLabel="Stav">
+                    @if (row.IsActive)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">aktivní</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">deaktivován</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Akce" Style="text-align: right;">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Size="Size.Small"
+                                   Color="Color.Error"
+                                   Disabled="@(IsSelf(row) || !row.IsActive)"
+                                   OnClick="@(() => Delete(row))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Class="pa-4" Color="Color.Secondary">
+                    Zatím nikdo. Přidej prvního technika tlačítkem výše.
+                </MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<TeamUserDto> _users = new();
+    private bool _loading = true;
+    private Guid? _currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var sub = state.User.FindFirst("sub")?.Value
+                ?? state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (Guid.TryParse(sub, out var id))
+            {
+                _currentUserId = id;
+            }
+            if (state.User.Identity?.IsAuthenticated == true)
+            {
+                await LoadAsync();
+                return;
+            }
+        }
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var users = await TeamClient.ListAsync();
+            _users = users.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Chyba načítání týmu: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenCreate()
+    {
+        var dialog = await DialogService.ShowAsync<TeamUserDialog>("Nový technik",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: CreateTechnicianRequest req })
+        {
+            try
+            {
+                var resp = await TeamClient.CreateTechnicianAsync(req);
+                if (resp.Error == "email_taken")
+                {
+                    Snackbar.Add($"Email {req.Email} je už použit.", Severity.Warning);
+                    return;
+                }
+                Snackbar.Add($"Technik {req.FullName} přidán.", Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Vytvoření selhalo: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete(TeamUserDto user)
+    {
+        var ok = await DialogService.ShowMessageBoxAsync(
+            "Smazat uživatele",
+            $"Opravdu deaktivovat {user.FullName} ({user.Email})? Historická data revizí zůstanou zachována, ale uživatel se už nepřihlásí.",
+            yesText: "Smazat", cancelText: "Zrušit");
+        if (ok != true) return;
+
+        try
+        {
+            var resp = await TeamClient.DeleteAsync(user.Id);
+            if (resp.Success)
+            {
+                Snackbar.Add("Uživatel deaktivován.", Severity.Success);
+                await LoadAsync();
+            }
+            else if (resp.Error == "self_delete_forbidden")
+            {
+                Snackbar.Add("Sebe samého nemůžeš smazat.", Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add("Smazání selhalo.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Smazání selhalo: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private bool IsSelf(TeamUserDto user) => _currentUserId is { } id && id == user.Id;
+
+    private static string RoleLabel(string role) => role switch
+    {
+        "Owner" => "Vlastník",
+        "Admin" => "Admin",
+        "Technician" => "Technik",
+        _ => role,
+    };
+}

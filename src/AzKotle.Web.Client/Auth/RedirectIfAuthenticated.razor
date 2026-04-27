@@ -1,0 +1,24 @@
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
+
+@code {
+    // Bezvizuální interaktivní komponenta pro Home.razor (SSR landing). SSR
+    // nemá přístup k JWT (klient-only), takže redirect musí běžet na klientu
+    // po WASM hydraci. Anon visitor vidí landing okamžitě bez WASM bootstrapu;
+    // přihlášený vidí kratičký flash landingu (~100-200ms boot z cache) než
+    // se přesměruje na /dashboard. replace:true zajistí, že back button
+    // nezacyklí Home → Dashboard → Home.
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/dashboard", replace: true);
+        }
+    }
+}

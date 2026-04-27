@@ -70,18 +70,42 @@ services:
       retries: 6
     networks: [internal]
 
+  # One-shot DDL migrator. Spouští se jednou při každém deployi PŘED api/app —
+  # Compose `service_completed_successfully` zajistí, že rollout halts pokud
+  # migrátor exit != 0. Image identický s api, jen jiný entrypoint.
+  #
+  # Bezpečnostní invariant: migrátor používá POSTGRES_USER (superuser, DDL-capable).
+  # Runtime api/app používá azkotle_app (NOSUPERUSER NOBYPASSRLS) — superuser
+  # tiše obchází FORCE ROW LEVEL SECURITY, takže pokud by api jelo jako superuser,
+  # tenant_isolation by se vypnul a tenanti by viděli data ostatních.
+  migrator:
+    image: ghcr.io/turkott/azkotle-api:${AZKOTLE_IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # SUPERUSER credentials — pouze pro DDL. Nikdy NEcopyovat tento connection
+      # string do runtime api/app environment.
+      ConnectionStrings__AzKotleDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    entrypoint: ["dotnet", "AzKotle.Api.dll", "--apply-migrations"]
+    networks: [internal]
+
   api:
     image: ghcr.io/turkott/azkotle-api:${AZKOTLE_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       # Runtime: API se připojuje jako non-superuser azkotle_app (NOSUPERUSER
       # NOBYPASSRLS) — bez toho by superuser tichá obcházel celou tenant_isolation
-      # RLS politiku. Migrace se NESPOUŠTÍ z runtime kontejneru — viz
-      # deploy/postgres/README.md (musí běžet jako ${POSTGRES_USER}).
+      # RLS politiku. Migrace se NESPOUŠTÍ z runtime kontejneru — běží v 'migrator'
+      # sidecaru jako ${POSTGRES_USER}, viz deploy/postgres/README.md.
       ConnectionStrings__AzKotleDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER:-azkotle_app};Password=${APP_DB_PASSWORD};Pooling=true;Maximum Pool Size=20"
       Jwt__Issuer: "https://api.az-kotle.cz"
       Jwt__Audience: "azkotle-api"

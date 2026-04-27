@@ -1,0 +1,73 @@
+@using AzKotle.Application.Tenants.Team
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Heslo si poznamenej a předej technikovi bezpečným kanálem — zde se ukáže pouze teď.
+            </MudText>
+
+            <MudTextField @bind-Value="_fullName"
+                          Label="Jméno a příjmení"
+                          Variant="Variant.Outlined"
+                          Required Immediate
+                          MaxLength="255"
+                          Error="@(_attempted && string.IsNullOrWhiteSpace(_fullName))"
+                          ErrorText="Vyplň jméno." />
+
+            <MudTextField @bind-Value="_email"
+                          Label="Email"
+                          InputType="InputType.Email"
+                          Variant="Variant.Outlined"
+                          Required Immediate
+                          MaxLength="255"
+                          Error="@(_attempted && !IsEmailValid(_email))"
+                          ErrorText="Neplatný email." />
+
+            <MudTextField @bind-Value="_password"
+                          Label="Heslo (min. 12 znaků)"
+                          InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                          Variant="Variant.Outlined"
+                          Required Immediate
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                          OnAdornmentClick="@(() => _showPassword = !_showPassword)"
+                          Error="@(_attempted && (_password?.Length ?? 0) < MinPasswordLength)"
+                          ErrorText="@($"Heslo musí mít aspoň {MinPasswordLength} znaků.")" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Zrušit</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">Vytvořit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const int MinPasswordLength = 12;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private string? _fullName;
+    private string? _email;
+    private string? _password;
+    private bool _showPassword;
+    private bool _attempted;
+
+    private void Submit()
+    {
+        _attempted = true;
+        if (string.IsNullOrWhiteSpace(_fullName)) return;
+        if (!IsEmailValid(_email)) return;
+        if ((_password?.Length ?? 0) < MinPasswordLength) return;
+
+        var data = new CreateTechnicianRequest(_fullName!.Trim(), _email!.Trim(), _password!);
+        MudDialog.Close(DialogResult.Ok(data));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static bool IsEmailValid(string? email) =>
+        !string.IsNullOrWhiteSpace(email)
+        && email.Contains('@')
+        && email.IndexOf('.', email.IndexOf('@')) > 0;
+}

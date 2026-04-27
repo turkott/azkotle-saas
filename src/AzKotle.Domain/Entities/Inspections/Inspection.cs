@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using AzKotle.Domain.Common;
 
 namespace AzKotle.Domain.Entities.Inspections;
@@ -8,6 +9,8 @@ public sealed class Inspection : DomainEntity
     public const int RecommendationsMaxLength = 4000;
     public const int PdfB2KeyMaxLength = 512;
     public const int PdfSha256Length = 64;
+    public const int AccessHashLength = 32;
+    private const int AccessHashRandomBytes = 24;
 
     public InspectionId Id { get; private set; }
     public TenantId TenantId { get; private set; }
@@ -26,6 +29,14 @@ public sealed class Inspection : DomainEntity
     public byte[]? SignatureData { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
+
+    /// <summary>
+    /// Unguessable URL-safe token for the public viewer page (F14). Generated at
+    /// Draft creation; lives for the inspection's lifetime so a single link given
+    /// to the customer keeps working after sign + future re-issues. Carries the
+    /// security of the public flow — never log or expose in non-public contexts.
+    /// </summary>
+    public string AccessHash { get; private set; } = string.Empty;
 
     /// <summary>
     /// Optimistic concurrency token. Mapped to Postgres system column <c>xmin</c>
@@ -77,6 +88,7 @@ public sealed class Inspection : DomainEntity
             Status = InspectionStatus.Draft,
             FormDataJson = "{}",
             CreatedAt = now,
+            AccessHash = GenerateAccessHash(),
         };
         inspection.RaiseDomainEvent(new InspectionDrafted(
             inspection.Id, tenantId, boilerId, technicianId, type, now));
@@ -162,4 +174,15 @@ public sealed class Inspection : DomainEntity
 
     private void Touch(TimeProvider? timeProvider) =>
         UpdatedAt = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+
+    private static string GenerateAccessHash()
+    {
+        // 24 bytes → 32 base64url characters; 192 bits of entropy is well past any
+        // brute-force / timing-attack horizon for HTTP-rate-limited scanning.
+        var bytes = RandomNumberGenerator.GetBytes(AccessHashRandomBytes);
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
 }

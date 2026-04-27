@@ -41,8 +41,26 @@
                 <MudText Typo="Typo.h4">@_boiler.QrCode</MudText>
                 <MudSpacer />
                 <MudButton StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Outlined" OnClick="DownloadQrPdf">QR štítek (PDF)</MudButton>
-                <MudButton StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" Variant="Variant.Filled" Color="Color.Primary"
-                           OnClick="StartInspection" Disabled="_creatingInspection" Class="ml-2">Nová revize NV 191</MudButton>
+                <MudMenu Label="Nová revize"
+                         StartIcon="@Icons.Material.Filled.AssignmentTurnedIn"
+                         EndIcon="@Icons.Material.Filled.ArrowDropDown"
+                         Variant="Variant.Filled"
+                         Color="Color.Primary"
+                         Disabled="_creatingInspection"
+                         Class="ml-2">
+                    <MudMenuItem Icon="@Icons.Material.Filled.EventRepeat"
+                                 OnClick="@(() => StartInspection(InspectionType.AnnualNv191))">
+                        Roční prohlídka (NV 191/2022)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Build"
+                                 OnClick="@(() => StartInspection(InspectionType.Tpg704_01Service))">
+                        Servis (TPG 704 01)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Warning"
+                                 OnClick="@(() => StartInspection(InspectionType.Emergency))">
+                        Mimořádná kontrola
+                    </MudMenuItem>
+                </MudMenu>
             </MudStack>
 
             <MudGrid>
@@ -309,14 +327,14 @@
         }
     }
 
-    private async Task StartInspection()
+    private async Task StartInspection(InspectionType type)
     {
         if (_boiler is null || _creatingInspection) return;
         _creatingInspection = true;
         try
         {
             var draft = await InspectionsClient.CreateAsync(new CreateInspectionRequest(
-                _boiler.Id, InspectionType.AnnualNv191, DateTime.UtcNow));
+                _boiler.Id, type, DateTime.UtcNow));
             Nav.NavigateTo($"/inspections/{draft.Id}");
         }
         catch (Exception ex)

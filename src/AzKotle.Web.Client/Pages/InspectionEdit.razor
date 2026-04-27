@@ -7,6 +7,7 @@
 @using AzKotle.Web.Client.Api
 @using AzKotle.Web.Client.Inspections
 @using Microsoft.AspNetCore.Components.Authorization
+@using QRCoder
 @implements IDisposable
 @inject InspectionsApiClient InspectionsClient
 @inject InspectionSchemaClient SchemaClient
@@ -75,7 +76,9 @@
             <DynamicForm Schema="_schema" Model="_formModel"
                          ExcludedSectionIds="@_excludedSections"
                          OnChanged="OnFormChanged"
-                         Disabled="_isReadOnly" />
+                         Disabled="_isReadOnly"
+                         InspectionId="@_inspection.Id"
+                         InspectionsClient="@InspectionsClient" />
 
             <MudCard Outlined Class="mt-3">
                 <MudCardHeader>
@@ -103,7 +106,7 @@
                                       Disabled="_isReadOnly"
                                       Counter="@AzKotle.Domain.Entities.Inspections.Inspection.RecommendationsMaxLength"
                                       MaxLength="@AzKotle.Domain.Entities.Inspections.Inspection.RecommendationsMaxLength" />
-                        <MudDatePicker Label="Termín další revize *"
+                        <MudDatePicker Label="@(IsNextDueRequired() ? "Termín další revize *" : "Termín další revize")"
                                        Date="@_nextDueAt"
                                        DateChanged="@(v => { _nextDueAt = v; ScheduleAutosave(); })"
                                        Variant="Variant.Outlined"
@@ -207,6 +210,66 @@
                         </MudStack>
                     </MudCardContent>
                 </MudCard>
+
+                @if (_inspection.Status == InspectionStatus.Signed && !string.IsNullOrEmpty(_inspection.AccessHash))
+                {
+                    <MudCard Outlined Class="mt-3">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Sdílení se zákazníkem</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    Tento odkaz vede na veřejnou stránku s revizní zprávou — bez přihlášení.
+                                </MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudGrid Spacing="3">
+                                <MudItem xs="12" md="7">
+                                    <MudStack Spacing="3">
+                                        <MudTextField T="string"
+                                                      Value="@_publicUrl"
+                                                      Label="Veřejný odkaz"
+                                                      Variant="Variant.Outlined"
+                                                      ReadOnly
+                                                      Adornment="Adornment.End"
+                                                      AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                                                      AdornmentAriaLabel="Kopírovat odkaz"
+                                                      OnAdornmentClick="CopyShareUrlAsync" />
+
+                                        <MudStack Row Spacing="2">
+                                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                                       StartIcon="@Icons.Material.Filled.ContentCopy"
+                                                       OnClick="CopyShareUrlAsync">
+                                                Zkopírovat odkaz
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                                       StartIcon="@Icons.Material.Filled.Email"
+                                                       Href="@_mailtoUri"
+                                                       Target="_top">
+                                                Odeslat e-mailem
+                                            </MudButton>
+                                        </MudStack>
+
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Tip: ukažte zákazníkovi QR kód a nechte ho ho naskenovat telefonem —
+                                            otevře se mu stránka s tlačítkem pro stažení PDF.
+                                        </MudText>
+                                    </MudStack>
+                                </MudItem>
+                                <MudItem xs="12" md="5">
+                                    <MudPaper Elevation="0" Outlined Class="pa-3 d-flex justify-center align-center">
+                                        @if (!string.IsNullOrEmpty(_qrSvg))
+                                        {
+                                            <div style="max-width: 220px; width: 100%;">
+                                                @((MarkupString)_qrSvg)
+                                            </div>
+                                        }
+                                    </MudPaper>
+                                </MudItem>
+                            </MudGrid>
+                        </MudCardContent>
+                    </MudCard>
+                }
             }
         }
     </Authorized>
@@ -234,6 +297,9 @@
     private SignaturePadCanvas? _signaturePad;
     private List<string> _missingRequiredFields = new();
     private bool _downloading;
+    private string _publicUrl = string.Empty;
+    private string _mailtoUri = string.Empty;
+    private string _qrSvg = string.Empty;
 
     private static readonly TimeSpan _autosaveDelay = TimeSpan.FromSeconds(5);
 
@@ -257,13 +323,14 @@
             _inspection = await InspectionsClient.GetAsync(Id);
             if (_inspection is null) return;
 
-            _schema = await SchemaClient.LoadAsync("nv191_2022");
+            _schema = await SchemaClient.LoadAsync(SchemaIdFor(_inspection.Type));
 
             _formModel = ParseFormData(_inspection.FormDataJson);
             _findings = _inspection.Findings;
             _recommendations = _inspection.Recommendations;
             _nextDueAt = _inspection.NextDueAt?.ToDateTime(TimeOnly.MinValue);
             _isReadOnly = _inspection.Status != InspectionStatus.Draft;
+            RebuildShareArtifacts();
 
             _ = LoadBoilerAsync();
         }
@@ -511,6 +578,7 @@
             _inspection = response.Inspection;
             _isReadOnly = true;
             _showSignSection = false;
+            RebuildShareArtifacts();
             Snackbar.Add("Revize podepsána a uložena.", Severity.Success);
         }
         catch (StaleVersionException)
@@ -548,8 +616,94 @@
             }
         }
 
-        if (_nextDueAt is null) missing.Add("Termín další revize");
+        if (IsNextDueRequired() && _nextDueAt is null) missing.Add("Termín další revize");
         return missing;
+    }
+
+    private bool IsNextDueRequired()
+    {
+        // Pole 'next_due_at' žije v schema's "summary" sekci (NV191 ho má required,
+        // servis/havárie ne) — _excludedSections ho schovává z DynamicFormu, takže
+        // walk schema-fields sám by ho minul. Validace musí explicitně zkoumat
+        // schema, ne formModel.
+        if (_schema is null) return false;
+        foreach (var sec in _schema.Sections)
+        {
+            foreach (var f in sec.Fields)
+            {
+                if (f.Id == "next_due_at" && f.Required) return true;
+            }
+        }
+        return false;
+    }
+
+    private static string SchemaIdFor(InspectionType type) => type switch
+    {
+        InspectionType.AnnualNv191 => "nv191_2022",
+        InspectionType.Tpg704_01Service => "tpg704_01_service",
+        InspectionType.Emergency => "emergency",
+        _ => "nv191_2022",
+    };
+
+    private void RebuildShareArtifacts()
+    {
+        if (_inspection is null
+            || _inspection.Status != InspectionStatus.Signed
+            || string.IsNullOrEmpty(_inspection.AccessHash))
+        {
+            _publicUrl = string.Empty;
+            _mailtoUri = string.Empty;
+            _qrSvg = string.Empty;
+            return;
+        }
+
+        // BaseUri končí slashem ("https://app.az-kotle.cz/"), takže přímá konkatenace
+        // produkuje validní URL bez double-slash. Záměrně ne hardcodovaná doména —
+        // dev / staging / prod mají různé hostnames.
+        _publicUrl = $"{Nav.BaseUri}i/{_inspection.AccessHash}";
+
+        var subject = "Revizní zpráva plynového kotle";
+        var body =
+            "Dobrý den,\r\n\r\n" +
+            "v příloze odkaz na vaši revizní zprávu plynového kotle.\r\n" +
+            "Pro stažení PDF klikněte na následující odkaz:\r\n\r\n" +
+            _publicUrl + "\r\n\r\n" +
+            "S pozdravem\r\n" +
+            "Váš revizní technik";
+        _mailtoUri = $"mailto:?subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(body)}";
+
+        _qrSvg = BuildQrSvg(_publicUrl);
+    }
+
+    private static string BuildQrSvg(string content)
+    {
+        // ECC.Q (~25% redundance) — tolerantní k otiskům prstů na displeji a k off-axis
+        // skenování telefonem v terénu. Vyšší ECC = větší kód, ale URL má < 80 znaků,
+        // takže velikost zůstává malá.
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(content, QRCodeGenerator.ECCLevel.Q);
+        var svg = new SvgQRCode(data);
+        return svg.GetGraphic(
+            pixelsPerModule: 5,
+            darkColorHex: "#000000",
+            lightColorHex: "#FFFFFF",
+            drawQuietZones: true);
+    }
+
+    private async Task CopyShareUrlAsync()
+    {
+        if (string.IsNullOrEmpty(_publicUrl)) return;
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", _publicUrl);
+            Snackbar.Add("Odkaz zkopírován.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            // navigator.clipboard vyžaduje secure context (HTTPS) a user-gesture v
+            // některých browserech. Fallback: nabídnout uživateli kopírování ručně.
+            Snackbar.Add($"Kopírování selhalo: {ex.Message}. Vyberte URL ručně a zkopírujte (Ctrl+C).", Severity.Warning);
+        }
     }
 
     public void Dispose()

@@ -36,7 +36,12 @@ RUN dotnet publish src/AzKotle.Api/AzKotle.Api.csproj \
 
 # Final runtime image.
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-${ALPINE_VARIANT} AS runtime
-RUN apk add --no-cache curl tzdata icu-libs \
+# fontconfig + ttf-dejavu: defense-in-depth pro QuestPDF na Alpine. QuestPDF
+# bundles Lato (full Czech diacritic coverage), takže pro stávající renderer
+# není fontconfig striktně nutný — ale jakýkoli budoucí refactor na jinou
+# font family by tiše renderoval ".notdef" boxy bez systémových fontů. ~5 MB
+# layer cena za eliminaci celé třídy budoucích regresí (Finding #2 z auditu).
+RUN apk add --no-cache curl tzdata icu-libs fontconfig ttf-dejavu \
     && addgroup -S azkotle \
     && adduser -S azkotle -G azkotle -u 10001
 ENV TZ=Europe/Prague \

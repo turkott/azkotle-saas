@@ -16,9 +16,19 @@ public sealed class EmbeddedInspectionTemplateProvider : IInspectionTemplateProv
         () => Load("AzKotle.Infrastructure.Templates.nv191_2022.json"),
         LazyThreadSafetyMode.ExecutionAndPublication);
 
+    private readonly Lazy<InspectionTemplate?> _service = new(
+        () => Load("AzKotle.Infrastructure.Templates.tpg704_01_service.json"),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    private readonly Lazy<InspectionTemplate?> _emergency = new(
+        () => Load("AzKotle.Infrastructure.Templates.emergency.json"),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
     public InspectionTemplate? GetTemplate(InspectionType type) => type switch
     {
         InspectionType.AnnualNv191 => _nv191.Value,
+        InspectionType.Tpg704_01Service => _service.Value,
+        InspectionType.Emergency => _emergency.Value,
         _ => null,
     };
 

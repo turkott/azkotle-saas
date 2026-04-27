@@ -13,6 +13,14 @@ public interface IFileStorage
         TimeSpan ttl,
         string? downloadFileName = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Probe used by <c>/health/ready</c> — confirms bucket exists and credentials
+    /// are accepted. Returns <c>true</c> on any successful response, <c>false</c>
+    /// on AmazonS3Exception or network error. Implementations MUST swallow non-cancellation
+    /// exceptions (readiness probe must not throw).
+    /// </summary>
+    Task<bool> HeadBucketAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class StorageOptions

@@ -28,8 +28,81 @@ public static class InspectionEndpoints
         group.MapGet("/{id:guid}/preview.pdf", PreviewPdfAsync).WithName("InspectionPreviewPdf");
         group.MapGet("/{id:guid}/pdf", DownloadPdfAsync).WithName("InspectionDownloadPdf");
         group.MapPost("/{id:guid}/sign", SignAsync).WithName("InspectionSign");
+        group.MapPost("/{id:guid}/photos", UploadPhotoAsync)
+            .WithName("InspectionUploadPhoto")
+            .DisableAntiforgery();
+        group.MapGet("/{id:guid}/photos", GetPhotoAsync).WithName("InspectionGetPhoto");
 
         return routes;
+    }
+
+    private static async Task<IResult> UploadPhotoAsync(
+        Guid id,
+        IFormFile file,
+        [FromForm] string fieldId,
+        InspectionPhotoService photoService,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        if (!TryGetUserId(user, out var actorId))
+        {
+            return Results.Unauthorized();
+        }
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest(new { error = "invalid_input", detail = "Soubor chybí." });
+        }
+        if (file.Length > InspectionPhotoService.MaxPhotoBytes)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_input",
+                detail = $"Soubor je příliš velký, maximum je {InspectionPhotoService.MaxPhotoBytes / 1024 / 1024} MB.",
+            });
+        }
+
+        using var ms = new MemoryStream((int)file.Length);
+        await file.CopyToAsync(ms, ct);
+
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        var result = await photoService.UploadAsync(
+            new InspectionId(id), actorId, fieldId, ms.ToArray(), file.ContentType, ipAddress, userAgent, ct);
+
+        return result switch
+        {
+            UploadPhotoResult.Success ok => Results.Ok(new InspectionPhotoUploadResponse(ok.StorageKey)),
+            UploadPhotoResult.Invalid bad => Results.BadRequest(new { error = "invalid_input", detail = bad.Reason }),
+            UploadPhotoResult.InvalidState bad => Results.Conflict(new { error = "invalid_state", detail = bad.Reason }),
+            UploadPhotoResult.NotFound => Results.NotFound(),
+            _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
+        };
+    }
+
+    private static async Task<IResult> GetPhotoAsync(
+        Guid id,
+        [FromQuery] string storageKey,
+        InspectionPhotoService photoService,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(storageKey))
+        {
+            return Results.BadRequest(new { error = "invalid_input", detail = "storageKey chybí." });
+        }
+
+        var result = await photoService.IssuePhotoUrlAsync(new InspectionId(id), storageKey, ct);
+        return result switch
+        {
+            IssuePhotoUrlResult.Success ok => Results.Redirect(ok.Url, permanent: false, preserveMethod: false),
+            IssuePhotoUrlResult.NotFound => Results.NotFound(),
+            _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
+        };
     }
 
     private static async Task<IResult> SignAsync(
@@ -290,5 +363,8 @@ public static class InspectionEndpoints
         i.Type, i.PerformedAt, i.Status,
         i.FormDataJson, i.Findings, i.Recommendations, i.NextDueAt,
         i.PdfB2Key, i.PdfSha256, i.SignedAt,
-        i.CreatedAt, i.UpdatedAt, i.Version);
+        i.CreatedAt, i.UpdatedAt, i.Version,
+        i.AccessHash);
 }
+
+public sealed record InspectionPhotoUploadResponse(string StorageKey);

@@ -1,0 +1,168 @@
+@using AzKotle.Web.Client.Api
+@using Microsoft.AspNetCore.Components.Forms
+
+<MudPaper Elevation="0" Outlined Class="pa-3">
+    <MudStack Spacing="2">
+        <MudStack Row AlignItems="AlignItems.Center">
+            <MudIcon Icon="@Icons.Material.Filled.PhotoCamera" Color="Color.Primary" />
+            <MudText Typo="Typo.subtitle2">@Label</MudText>
+            @if (Required)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">*</MudText>
+            }
+        </MudStack>
+
+        @if (_uploading)
+        {
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                <MudProgressCircular Size="Size.Small" Indeterminate />
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Nahrávám fotku…</MudText>
+            </MudStack>
+        }
+        else if (HasPhoto)
+        {
+            <MudStack Row AlignItems="AlignItems.Start" Spacing="2">
+                <MudPaper Elevation="0" Outlined Style="width: 160px; height: 160px; overflow: hidden;">
+                    <img src="@_thumbnailUrl"
+                         alt="@Label"
+                         style="width: 100%; height: 100%; object-fit: cover; display: block;" />
+                </MudPaper>
+                <MudStack Spacing="1" Class="flex-grow-1">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               Disabled="@Disabled"
+                               OnClick="OpenPickerAsync">
+                        Nahradit
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Delete"
+                               Disabled="@Disabled"
+                               OnClick="DeletePhoto">
+                        Smazat
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        }
+        else
+        {
+            <MudFileUpload @ref="_fileUpload"
+                           T="IBrowserFile"
+                           FilesChanged="OnFileSelected"
+                           Accept="image/*"
+                           Disabled="@Disabled"
+                           InputAttributes="@_captureAttributes"
+                           MaximumFileCount="1">
+                <ActivatorContent>
+                    <MudButton HtmlTag="label"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.PhotoCamera"
+                               Disabled="@Disabled">
+                        Vyfotit / Nahrát
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <MudAlert Severity="Severity.Error" Dense Variant="Variant.Outlined">
+                @_error
+            </MudAlert>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    // 8 MB matches the server limit (InspectionPhotoService.MaxPhotoBytes). Drží
+    // se v sync — pokud se backend zvedne, sjednotit s nějakým sdíleným místem.
+    private const long MaxBytes = 8L * 1024 * 1024;
+
+    [Parameter, EditorRequired] public Guid InspectionId { get; set; }
+    [Parameter, EditorRequired] public string FieldId { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter, EditorRequired] public InspectionsApiClient ApiClient { get; set; } = default!;
+
+    private readonly Dictionary<string, object> _captureAttributes = new()
+    {
+        // capture="environment" instruuje mobilní browsery použít zadní kameru.
+        // MudFileUpload neexponuje atribut přímo, jde přes InputAttributes na <InputFile>.
+        ["capture"] = "environment",
+    };
+
+    private MudFileUpload<IBrowserFile>? _fileUpload;
+    private bool _uploading;
+    private string? _error;
+    private string? _thumbnailUrl;
+
+    private bool HasPhoto => !string.IsNullOrEmpty(Value);
+
+    protected override void OnParametersSet()
+    {
+        _thumbnailUrl = string.IsNullOrEmpty(Value)
+            ? null
+            : ApiClient.BuildPhotoUri(InspectionId, Value).ToString();
+    }
+
+    private async Task OpenPickerAsync()
+    {
+        if (_fileUpload is null) return;
+        await _fileUpload.OpenFilePickerAsync();
+    }
+
+    private async Task OnFileSelected(IBrowserFile? file)
+    {
+        _error = null;
+        if (file is null) return;
+
+        if (file.Size > MaxBytes)
+        {
+            _error = $"Soubor je příliš velký ({file.Size / 1024 / 1024} MB), maximum je {MaxBytes / 1024 / 1024} MB.";
+            return;
+        }
+        if (file.ContentType is not ("image/png" or "image/jpeg" or "image/jpg"))
+        {
+            _error = $"Nepodporovaný formát {file.ContentType}. Povolené: PNG, JPEG.";
+            return;
+        }
+
+        _uploading = true;
+        StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxBytes);
+            // image/jpg a image/jpeg jsou zaměnitelné; server očekává image/jpeg.
+            var ct = file.ContentType == "image/jpg" ? "image/jpeg" : file.ContentType;
+            var resp = await ApiClient.UploadPhotoAsync(
+                InspectionId, FieldId, stream, file.Name, ct, file.Size);
+            if (!resp.Succeeded)
+            {
+                _error = resp.Error ?? "Nahrávání selhalo.";
+                return;
+            }
+            await ValueChanged.InvokeAsync(resp.StorageKey);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Nahrávání selhalo: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task DeletePhoto()
+    {
+        // Soft-delete v UI — S3 objekt zůstává (uložený storage je levný; přepsání
+        // při dalším uploadu stejným fieldId stejně zůstává konzistentní). Audit
+        // log vidí jen upload events; delete je rollback formData hodnoty.
+        await ValueChanged.InvokeAsync(null);
+    }
+}
