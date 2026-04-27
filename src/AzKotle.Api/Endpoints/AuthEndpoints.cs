@@ -530,12 +530,47 @@ public static class AuthEndpoints
         ILogger<PasswordResetScope> logger,
         CancellationToken ct)
     {
+        // Constant-time defense: všechny větve čekají min 2s před návratem,
+        // aby útočník nedokázal přes timing rozeznat existenci účtu/tenanta.
+        // (Empirie 2026-04-27: existující 1.3s, neexistující email 0.12s,
+        // neexistující tenant 0.07s — měřitelný leak. Padding sjednotí.)
+        var minimumWait = Task.Delay(TimeSpan.FromMilliseconds(2000), ct);
+
+        try
+        {
+            await DoForgotPasswordWorkAsync(request, validator, db, email, appOptions, httpContext, time, logger, ct);
+        }
+        catch (Exception ex)
+        {
+            // Nikdy nevracíme 500 — leak by signalizoval, že request došel "dál"
+            // (existující tenant/email vs. neexistující). Logujeme a vrátíme 204
+            // jako všechny ostatní cesty.
+            logger.LogError(ex, "Forgot password unexpected error");
+        }
+
+        try
+        { await minimumWait; }
+        catch (OperationCanceledException) { }
+        return Results.NoContent();
+    }
+
+    private static async Task DoForgotPasswordWorkAsync(
+        ForgotPasswordRequest request,
+        IValidator<ForgotPasswordRequest> validator,
+        AzKotleDbContext db,
+        IEmailSender email,
+        IOptions<AppOptions> appOptions,
+        HttpContext httpContext,
+        TimeProvider time,
+        ILogger<PasswordResetScope> logger,
+        CancellationToken ct)
+    {
         var validation = await validator.ValidateAsync(request, ct);
         if (!validation.IsValid)
         {
-            // Validation errory vracíme — útočník je dostane stejně z malformed
-            // requestu, takže žádný enumeration leak.
-            return Results.ValidationProblem(validation.ToDictionary());
+            // Validační chyba — minimumWait stejně doběhne, attacker dostane 204
+            // jako u úspěchu. Validace je tu jen jako defense in depth.
+            return;
         }
 
         var tenantId = await db.Tenants.AsNoTracking()
@@ -545,8 +580,7 @@ public static class AuthEndpoints
 
         if (tenantId is null)
         {
-            // Tenant neexistuje — silently 204, neprozradíme attackerovi.
-            return Results.NoContent();
+            return;
         }
 
         var resolvedTenantId = new TenantId(tenantId.Value);
@@ -563,12 +597,10 @@ public static class AuthEndpoints
 
         if (user is null || !user.IsActive || user.TenantId != resolvedTenantId)
         {
-            // Email neexistuje nebo neaktivní — silent success.
             await tx.CommitAsync(ct);
-            return Results.NoContent();
+            return;
         }
 
-        // Token: 32 random bytes → base64url (kratší než hex, URL-safe).
         var plainToken = GeneratePlainToken();
         var tokenHash = HashToken(plainToken);
         var now = time.GetUtcNow().UtcDateTime;
@@ -593,21 +625,24 @@ public static class AuthEndpoints
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
-        // Email mimo transakci — když SMTP failne, token už je v DB a uživatel
-        // ho prostě nedostane. Lepší než reverznout token a riskovat, že audit
-        // log o reset_requested zmizí (compliance).
+        // Email send má tight timeout (1.5s) — kdyby Resend tonul, vrátíme 204
+        // pořád v 2s minimumWait okně. Email může být doručen i tak (Resend
+        // accept request rychle, doručení je async na jejich straně).
         var resetUrl = BuildResetUrl(appOptions.Value.BaseUrl, plainToken, request.TenantSlug);
+        using var emailCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        emailCts.CancelAfter(TimeSpan.FromMilliseconds(1500));
         try
         {
-            await email.SendAsync(BuildResetEmail(user.Email, user.FullName, resetUrl), ct);
+            await email.SendAsync(BuildResetEmail(user.Email, user.FullName, resetUrl), emailCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Reset email send timeout for userId={UserId}", user.Id.Value);
         }
         catch (Exception ex)
         {
-            // Email selhal — nelogovat email adresu (PII), jen userId.
             logger.LogWarning(ex, "Reset email send failed for userId={UserId}", user.Id.Value);
         }
-
-        return Results.NoContent();
     }
 
     /// <summary>
