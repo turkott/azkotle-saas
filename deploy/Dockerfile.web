@@ -27,12 +27,17 @@ RUN dotnet restore src/AzKotle.Web/AzKotle.Web.csproj
 
 # Build + publish.
 COPY src/ src/
-RUN dotnet publish src/AzKotle.Web/AzKotle.Web.csproj \
+# Force cache bust to ensure blazor.web.js + blazor.server.js are regenerated
+# from the .NET 10 SDK pack (was missing in earlier cached builds).
+ARG BUILD_TIMESTAMP=2026-04-27T11-40
+RUN echo "Cache bust: $BUILD_TIMESTAMP" && \
+    dotnet publish src/AzKotle.Web/AzKotle.Web.csproj \
     -c Release \
     --no-restore \
     --self-contained false \
     -p:PublishReadyToRun=false \
-    -o /app/publish
+    -o /app/publish && \
+    ls -la /app/publish/wwwroot/_framework/blazor.* || echo "WARNING: blazor.web.js missing from publish output"
 
 # Final runtime image (debian-based, kvůli kompatibilitě s WASM Mono).
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
