@@ -307,10 +307,17 @@ app.MapGet("/health/ready", async (
         dbStatus = ex.GetType().Name;
     }
 
+    // S3 probe is informational only. Backblaze B2 (and some other S3-compat
+    // backends) restrict probe operations like HeadBucket/GetObjectMetadata
+    // even when application keys can PUT/GET successfully — capability scoping
+    // is finer than AWS S3 (B2 needs listFiles capability for HEAD ops). Real
+    // S3 outages still surface via user-facing errors and warning logs from
+    // PutAsync/GetAsync; gating readiness on the probe would block deploys
+    // for a B2 quirk that doesn't affect actual functionality.
     var s3Ok = await storage.HeadBucketAsync(ct);
-    var s3Status = s3Ok ? "ok" : "unreachable";
+    var s3Status = s3Ok ? "ok" : "probe_unavailable";
 
-    var ready = dbStatus == "ok" && s3Ok;
+    var ready = dbStatus == "ok";
     var payload = new
     {
         status = ready ? "ready" : "not_ready",
