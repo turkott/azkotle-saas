@@ -84,6 +84,17 @@ public class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         };
         _appConnectionString = appBuilder.ConnectionString;
 
+        // CREATE ROLE before migrations — F14 migration's GRANT EXECUTE on the
+        // public.find_public_inspection function depends on this role existing
+        // at migration time. In production the init script creates azkotle_app
+        // before migrations run; tests must mirror that order or per-role
+        // function grants silently skip and the public viewer endpoint 500s.
+        await using (var raw = new NpgsqlConnection(_adminConnectionString))
+        {
+            await raw.OpenAsync();
+            await Execute(raw, $"CREATE ROLE {AppUserName} LOGIN PASSWORD '{AppUserPassword}' NOSUPERUSER NOBYPASSRLS;");
+        }
+
         await using (var adminDb = CreateAdminDbContext())
         {
             await adminDb.Database.MigrateAsync();
@@ -92,7 +103,8 @@ public class AzKotleApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await using (var raw = new NpgsqlConnection(_adminConnectionString))
         {
             await raw.OpenAsync();
-            await Execute(raw, $"CREATE ROLE {AppUserName} LOGIN PASSWORD '{AppUserPassword}' NOSUPERUSER NOBYPASSRLS;");
+            // CREATE ROLE already done above — these GRANTs run AFTER migrations
+            // to cover the actual tables/sequences created by them.
             await Execute(raw, $"GRANT CONNECT ON DATABASE {adminBuilder.Database} TO {AppUserName};");
             await Execute(raw, $"GRANT USAGE ON SCHEMA public TO {AppUserName};");
             await Execute(raw, $"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {AppUserName};");
