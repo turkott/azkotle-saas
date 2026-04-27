@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using AzKotle.Api.MultiTenancy;
 using AzKotle.Application.Abstractions;
@@ -61,6 +62,16 @@ public static class AuthEndpoints
         // by žila až do své Max-Age (30 dní), zbytečně si držela DB záznam.
         group.MapPost("/logout", LogoutAsync)
             .WithName("AuthLogout")
+            .WithMetadata(new AllowAnonymousTenantAttribute())
+            .AllowAnonymous();
+
+        group.MapPost("/forgot-password", ForgotPasswordAsync)
+            .WithName("AuthForgotPassword")
+            .WithMetadata(new AllowAnonymousTenantAttribute())
+            .AllowAnonymous();
+
+        group.MapPost("/reset-password", ResetPasswordAsync)
+            .WithName("AuthResetPassword")
             .WithMetadata(new AllowAnonymousTenantAttribute())
             .AllowAnonymous();
 
@@ -501,11 +512,261 @@ public static class AuthEndpoints
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException pg && pg.SqlState == UniqueViolationSqlState;
 
+    /// <summary>
+    /// /auth/forgot-password — vždy 204, ať email existuje nebo ne. Útočník
+    /// tak nemůže přes timing rozdíl detekovat platné účty (enumeration).
+    /// Email odesíláme jen když najdeme aktivního usera; reset link míří na
+    /// {App.BaseUrl}/reset-password?token={plain}&amp;slug={tenant_slug}.
+    /// Token žije 1 h a je single-use (used_at).
+    /// </summary>
+    private static async Task<IResult> ForgotPasswordAsync(
+        [FromBody] ForgotPasswordRequest request,
+        IValidator<ForgotPasswordRequest> validator,
+        AzKotleDbContext db,
+        IEmailSender email,
+        IOptions<AppOptions> appOptions,
+        HttpContext httpContext,
+        TimeProvider time,
+        ILogger<PasswordResetScope> logger,
+        CancellationToken ct)
+    {
+        var validation = await validator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+        {
+            // Validation errory vracíme — útočník je dostane stejně z malformed
+            // requestu, takže žádný enumeration leak.
+            return Results.ValidationProblem(validation.ToDictionary());
+        }
+
+        var tenantId = await db.Tenants.AsNoTracking()
+            .Where(t => t.Slug == request.TenantSlug)
+            .Select(t => (Guid?)t.Id.Value)
+            .FirstOrDefaultAsync(ct);
+
+        if (tenantId is null)
+        {
+            // Tenant neexistuje — silently 204, neprozradíme attackerovi.
+            return Results.NoContent();
+        }
+
+        var resolvedTenantId = new TenantId(tenantId.Value);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT set_config('app.current_tenant_id', {0}, false)",
+            new object[] { resolvedTenantId.Value.ToString() },
+            ct);
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await db.Users
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
+
+        if (user is null || !user.IsActive || user.TenantId != resolvedTenantId)
+        {
+            // Email neexistuje nebo neaktivní — silent success.
+            await tx.CommitAsync(ct);
+            return Results.NoContent();
+        }
+
+        // Token: 32 random bytes → base64url (kratší než hex, URL-safe).
+        var plainToken = GeneratePlainToken();
+        var tokenHash = HashToken(plainToken);
+        var now = time.GetUtcNow().UtcDateTime;
+        var expiresAt = now.AddHours(1);
+
+        var resetToken = PasswordResetToken.Issue(resolvedTenantId, user.Id, tokenHash, expiresAt, time);
+        db.PasswordResetTokens.Add(resetToken);
+
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        var requestMeta = $$"""{"email":"{{JsonEscape(user.Email)}}"}""";
+        db.AuditLog.Add(AuditLog.Record(
+            resolvedTenantId, user.Id,
+            "password.reset_requested", "user", user.Id.Value,
+            ipAddress, userAgent, requestMeta, time));
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        // Email mimo transakci — když SMTP failne, token už je v DB a uživatel
+        // ho prostě nedostane. Lepší než reverznout token a riskovat, že audit
+        // log o reset_requested zmizí (compliance).
+        var resetUrl = BuildResetUrl(appOptions.Value.BaseUrl, plainToken, request.TenantSlug);
+        try
+        {
+            await email.SendAsync(BuildResetEmail(user.Email, user.FullName, resetUrl), ct);
+        }
+        catch (Exception ex)
+        {
+            // Email selhal — nelogovat email adresu (PII), jen userId.
+            logger.LogWarning(ex, "Reset email send failed for userId={UserId}", user.Id.Value);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// /auth/reset-password — validuje token + tenant, hashne SHA256, hledá
+    /// PasswordResetToken s match a IsRedeemable. Po úspěchu označí token
+    /// MarkUsed a updatuje password. NEvrací JWT — uživatel se musí explicitně
+    /// přihlásit přes /login (potvrzení vlastnictví hesla).
+    /// </summary>
+    private static async Task<IResult> ResetPasswordAsync(
+        [FromBody] ResetPasswordRequest request,
+        IValidator<ResetPasswordRequest> validator,
+        AzKotleDbContext db,
+        IPasswordHasher hasher,
+        HttpContext httpContext,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var validation = await validator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+        {
+            return Results.ValidationProblem(validation.ToDictionary());
+        }
+
+        var tenantId = await db.Tenants.AsNoTracking()
+            .Where(t => t.Slug == request.TenantSlug)
+            .Select(t => (Guid?)t.Id.Value)
+            .FirstOrDefaultAsync(ct);
+
+        if (tenantId is null)
+        {
+            return InvalidResetToken();
+        }
+
+        var resolvedTenantId = new TenantId(tenantId.Value);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT set_config('app.current_tenant_id', {0}, false)",
+            new object[] { resolvedTenantId.Value.ToString() },
+            ct);
+
+        var tokenHash = HashToken(request.Token);
+        var resetToken = await db.PasswordResetTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
+
+        var now = time.GetUtcNow().UtcDateTime;
+        if (resetToken is null || !resetToken.IsRedeemable(now))
+        {
+            return InvalidResetToken();
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == resetToken.UserId, ct);
+        if (user is null || !user.IsActive)
+        {
+            return InvalidResetToken();
+        }
+
+        user.SetPassword(hasher.Hash(request.NewPassword));
+        resetToken.MarkUsed(time);
+
+        var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            userAgent = null;
+        }
+
+        db.AuditLog.Add(AuditLog.Record(
+            resolvedTenantId, user.Id,
+            "password.reset_completed", "user", user.Id.Value,
+            ipAddress, userAgent, metadataJson: null, time));
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return Results.NoContent();
+    }
+
+    private static string GeneratePlainToken()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Base64UrlEncode(bytes);
+    }
+
+    private static string HashToken(string plain)
+    {
+        var bytes = Encoding.UTF8.GetBytes(plain);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string Base64UrlEncode(ReadOnlySpan<byte> bytes)
+    {
+        var encoded = Convert.ToBase64String(bytes);
+        return encoded.TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static string BuildResetUrl(string baseUrl, string token, string tenantSlug)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(baseUrl)
+            ? "https://www.az-kotle.cz"
+            : baseUrl.TrimEnd('/');
+        return $"{trimmed}/reset-password?token={Uri.EscapeDataString(token)}&slug={Uri.EscapeDataString(tenantSlug)}";
+    }
+
+    private static EmailMessage BuildResetEmail(string toAddress, string fullName, string resetUrl)
+    {
+        var safeName = string.IsNullOrWhiteSpace(fullName) ? "uživateli" : fullName;
+        var subject = "Reset hesla — AZ KOTLE";
+        var html = $$"""
+            <!DOCTYPE html>
+            <html lang="cs">
+            <body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a1a; max-width: 560px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #0d6efd;">Reset hesla</h2>
+              <p>Dobrý den, <strong>{{safeName}}</strong>,</p>
+              <p>obdrželi jsme žádost o reset hesla k vašemu účtu AZ KOTLE. Pro nastavení nového hesla klikněte na odkaz níže:</p>
+              <p style="margin: 24px 0;">
+                <a href="{{resetUrl}}" style="background: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Nastavit nové heslo</a>
+              </p>
+              <p>Odkaz je platný <strong>1 hodinu</strong> a lze ho použít pouze jednou.</p>
+              <p>Pokud jste o reset hesla nežádali, tento email ignorujte.</p>
+              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 32px 0 16px;" />
+              <p style="font-size: 12px; color: #6c757d;">
+                AZ KOTLE — Revize plynových kotlů.<br />
+                Tento email je automatický, neodpovídejte na něj.
+              </p>
+            </body>
+            </html>
+            """;
+        var text = $"""
+            Reset hesla — AZ KOTLE
+
+            Dobrý den, {safeName},
+
+            obdrželi jsme žádost o reset hesla k vašemu účtu AZ KOTLE.
+            Pro nastavení nového hesla otevřete tento odkaz:
+
+            {resetUrl}
+
+            Odkaz je platný 1 hodinu a lze ho použít pouze jednou.
+            Pokud jste o reset hesla nežádali, tento email ignorujte.
+
+            AZ KOTLE — Revize plynových kotlů.
+            """;
+        return new EmailMessage(toAddress, subject, html, text);
+    }
+
+    private static IResult InvalidResetToken() =>
+        Results.Json(new { error = "invalid_reset_token" }, statusCode: StatusCodes.Status400BadRequest);
+
     private static IResult InvalidCredentials() =>
         Results.Json(new { error = "invalid_credentials" }, statusCode: StatusCodes.Status401Unauthorized);
 
     private static IResult InvalidRefresh() =>
         Results.Json(new { error = "invalid_refresh_token" }, statusCode: StatusCodes.Status401Unauthorized);
+
+    /// <summary>Marker typ pro <see cref="ILogger{T}"/> kategorii v password reset endpoints.</summary>
+    internal sealed class PasswordResetScope { }
 
     /// <summary>Marker typ pro <see cref="ILogger{T}"/> kategorii v RefreshAsync.</summary>
     internal sealed class RefreshTokenScope { }

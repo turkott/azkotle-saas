@@ -24,3 +24,18 @@ public sealed record AuthResponse(
     Guid TenantId,
     string Email,
     string Role);
+
+/// <summary>
+/// /auth/forgot-password tělo. Tenant slug je povinný — bez něj server nemůže
+/// určit, komu reset link poslat (multi-tenant: stejný email může existovat
+/// pod více tenanty s různými hesly).
+/// </summary>
+public sealed record ForgotPasswordRequest(string Email, string TenantSlug);
+
+/// <summary>
+/// /auth/reset-password tělo. Token je plain (klient ho dostal v emailu);
+/// server si ho hashne SHA256 a hledá v DB. TenantSlug je nutný pro
+/// resolution tenant kontextu (RLS) — frontend ho dostane stejnou cestou jako
+/// token (query parametry v reset linku).
+/// </summary>
+public sealed record ResetPasswordRequest(string Token, string TenantSlug, string NewPassword);

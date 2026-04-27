@@ -22,6 +22,8 @@ public sealed class AzKotleDbContext : DbContext
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+
     public DbSet<Customer> Customers => Set<Customer>();
 
     public DbSet<Location> Locations => Set<Location>();

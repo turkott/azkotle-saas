@@ -77,6 +77,35 @@ public sealed class AuthApiClient
         }
     }
 
+    /// <summary>
+    /// /auth/forgot-password — server vždy vrací 204 (žádný feedback o existenci
+    /// emailu), takže "úspěch" pro UX znamená jen "request prošel". Network error
+    /// nebo validation se reportuje frontendu.
+    /// </summary>
+    public async Task<AuthResult> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default)
+    {
+        using var response = await _http.PostAsJsonAsync($"{AuthPath}/forgot-password", request, _serializerOptions, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return AuthResult.Ok();
+        }
+
+        var message = await FormatErrorAsync(response, ct);
+        return AuthResult.Failure(message);
+    }
+
+    public async Task<AuthResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
+    {
+        using var response = await _http.PostAsJsonAsync($"{AuthPath}/reset-password", request, _serializerOptions, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return AuthResult.Ok();
+        }
+
+        var message = await FormatErrorAsync(response, ct);
+        return AuthResult.Failure(message);
+    }
+
     public async Task LogoutAsync(CancellationToken ct = default)
     {
         // Refresh token žije v HttpOnly cookie — server si ho přečte sám, žádné body.
@@ -152,6 +181,7 @@ public sealed class AuthApiClient
                 {
                     "invalid_credentials" => "Neplatný email nebo heslo.",
                     "invalid_refresh_token" => "Přihlášení vypršelo.",
+                    "invalid_reset_token" => "Reset odkaz je neplatný nebo už vypršel. Vyžádejte si nový.",
                     "tenant_required" => "Chybí identifikace firmy (subdoména).",
                     "email_taken" => "Email už je použitý.",
                     "ico_taken" => "Firma s tímto IČO je už zaregistrovaná.",
