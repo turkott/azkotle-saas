@@ -120,6 +120,7 @@ services:
       Storage__ForcePathStyle: "true"
       Cors__AllowedOrigins__0: "https://app.az-kotle.cz"
       Cors__AllowedOrigins__1: "https://az-kotle.cz"
+      Cors__AllowedOrigins__2: "https://www.az-kotle.cz"
       Serilog__Seq__ServerUrl: "http://seq:80"
       Serilog__Seq__ApiKey: ${SEQ_API_KEY:-}
     networks: [internal]

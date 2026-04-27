@@ -9,11 +9,10 @@
     }
 }
 
-# --- Web (Blazor) ---
-app.az-kotle.cz {
+# --- Web (Blazor) — primary on www, app. zachován jako alias pro staré bookmarky ---
+www.az-kotle.cz, app.az-kotle.cz {
     encode zstd gzip
 
-    # /metrics is internal-only — block from public.
     @metrics path /metrics
     handle @metrics {
         respond "Forbidden" 403 {
@@ -40,7 +39,6 @@ app.az-kotle.cz {
 api.az-kotle.cz {
     encode zstd gzip
 
-    # /metrics is internal-only — block from public (Prometheus scrape via internal network).
     @metrics path /metrics
     handle @metrics {
         respond "Forbidden" 403 {
@@ -61,7 +59,7 @@ api.az-kotle.cz {
     }
 }
 
-# --- Apex redirect ---
+# --- Apex redirect → www. ---
 az-kotle.cz {
-    redir https://app.az-kotle.cz{uri} permanent
+    redir https://www.az-kotle.cz{uri} permanent
 }
