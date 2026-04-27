@@ -147,14 +147,26 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
     {
         try
         {
-            await _client.HeadBucketAsync(new HeadBucketRequest { BucketName = _options.Bucket }, cancellationToken);
+            // Backblaze B2 application keys scoped to readFiles/writeFiles return
+            // 403 on HeadBucket (it maps to b2_list_buckets needing listBuckets
+            // capability). HEAD on a sentinel object is universally supported
+            // and tells us the same thing: 404 = reachable + auth OK.
+            await _client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = _options.Bucket,
+                Key = "__probe__/healthcheck",
+            }, cancellationToken);
+            return true;
+        }
+        catch (AmazonS3Exception ex) when ((int)ex.StatusCode == 404)
+        {
+            // Successfully reached bucket and authenticated — sentinel doesn't
+            // exist (normal state). This IS the success signal we want.
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Readiness probe — log and return false. Caller (/health/ready) decides
-            // how to render this in the JSON response body.
-            _logger.LogWarning(ex, "S3 HeadBucket probe failed for bucket {Bucket}", _options.Bucket);
+            _logger.LogWarning(ex, "S3 readiness probe failed for bucket {Bucket}", _options.Bucket);
             return false;
         }
     }
